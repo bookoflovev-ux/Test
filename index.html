@@ -3,164 +3,216 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#6C5CE7">
-<meta name="description" content="Jouons & Apprenons — jeux éducatifs interactifs pour enfants de 3 à 12 ans.">
-<title>🎈 Jouons & Apprenons — Jeux éducatifs 3-12 ans</title>
+<meta name="theme-color" content="#FF5E5B">
+<meta name="description" content="Bric-à-Blocs — jeux éducatifs interactifs pour enfants de 3 à 12 ans : construction en blocs, chasse aux objets, calcul, mots, memory et quiz.">
+<title>🧱 Bric-à-Blocs — Jeux éducatifs 3-12 ans</title>
 <style>
   :root{
-    --violet:#6C5CE7; --rose:#FF6B9D; --jaune:#FFD32A; --vert:#20BF6B;
-    --bleu:#45AAF2; --orange:#FF9F43; --rouge:#EE5253; --turquoise:#0FB9B1;
-    --sombre:#2D3436; --clair:#FFFFFF;
-    --ombre:0 10px 30px rgba(0,0,0,.15);
-    --ombre-btn:0 6px 0 rgba(0,0,0,.15);
+    /* Palette « briques de jouet » */
+    --paper:#FFF4E4;
+    --ink:#241B4D;          /* indigo-noir choisi */
+    --ink-soft:#6B6390;
+    --card:#FFFFFF;
+    --r:#FF5E5B; --o:#FF9F1C; --y:#FFCA3A; --g:#22C3AE;
+    --b:#3FC0F0; --p:#8A4FEC; --pink:#FF4D9D;
+    --border:3px solid var(--ink);
+    --shadow:0 6px 0 var(--ink);
+    --shadow-lg:0 9px 0 var(--ink);
+    --radius:20px;
+
+    /* alias pour compat des générateurs */
+    --violet:var(--p); --vert:var(--g); --rose:var(--pink); --sombre:var(--ink);
+    --rouge:var(--r); --bleu:var(--b); --jaune:var(--y); --orange:var(--o); --turquoise:var(--g);
+    --ombre:var(--shadow);
   }
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{height:100%}
   body{
-    font-family:"Nunito","Segoe UI",system-ui,-apple-system,Arial,sans-serif;
-    background:linear-gradient(135deg,#6C5CE7 0%,#a55eea 50%,#FF6B9D 100%);
-    color:var(--sombre);
+    font-family:"Nunito","Baloo 2","Segoe UI",system-ui,-apple-system,Arial,sans-serif;
+    color:var(--ink);
+    background-color:var(--paper);
+    background-image:radial-gradient(rgba(36,27,77,.10) 2px, transparent 2px);
+    background-size:28px 28px; background-position:-6px -6px;
     min-height:100vh;overflow-x:hidden;
     display:flex;flex-direction:column;
     user-select:none;-webkit-user-select:none;
   }
-  #app{flex:1;display:flex;flex-direction:column;max-width:900px;margin:0 auto;width:100%;padding:16px}
-  .screen{animation:pop .4s ease}
-  @keyframes pop{from{opacity:0;transform:scale(.94) translateY(10px)}to{opacity:1;transform:scale(1)}}
+  #app{flex:1;display:flex;flex-direction:column;max-width:940px;margin:0 auto;width:100%;padding:16px 16px 8px}
+  .screen{animation:pop .35s cubic-bezier(.2,1.2,.4,1)}
+  @keyframes pop{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
 
-  /* Barre du haut */
+  /* ---- Brique générique (bouton physique) ---- */
+  .brick{
+    background:var(--card);border:var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow);transition:transform .08s, box-shadow .08s;cursor:pointer;
+  }
+  .brick:active{transform:translateY(6px);box-shadow:0 0 0 var(--ink)}
+
+  /* ---- Barre du haut (établi) ---- */
   header.bar{
-    display:flex;align-items:center;justify-content:space-between;gap:10px;
-    background:rgba(255,255,255,.16);backdrop-filter:blur(6px);
-    border-radius:22px;padding:10px 14px;margin-bottom:14px;color:#fff;
+    display:flex;align-items:center;gap:10px;margin-bottom:16px;
+    background:var(--card);border:var(--border);border-radius:22px;box-shadow:var(--shadow);
+    padding:8px 10px;flex-wrap:wrap;
   }
   .bar .home-btn{
-    background:#fff;color:var(--violet);border:none;border-radius:16px;
-    font-size:20px;font-weight:900;padding:8px 14px;cursor:pointer;box-shadow:var(--ombre-btn);
+    background:var(--r);color:#fff;border:var(--border);border-radius:15px;
+    font-size:22px;font-weight:900;padding:6px 14px;cursor:pointer;box-shadow:0 4px 0 var(--ink);
   }
-  .bar .home-btn:active{transform:translateY(3px);box-shadow:none}
-  .bar .infos{display:flex;gap:10px;align-items:center;font-weight:900}
-  .badge{background:#fff;color:var(--sombre);border-radius:14px;padding:6px 12px;font-size:16px;white-space:nowrap}
-  .badge.stars{color:#e0a800}
+  .bar .home-btn:active{transform:translateY(4px);box-shadow:none}
+  .bar .spacer{flex:1}
+  .pill{
+    display:inline-flex;align-items:center;gap:6px;border:var(--border);border-radius:15px;
+    padding:6px 12px;font-weight:900;font-size:16px;background:var(--y);cursor:pointer;
+    box-shadow:0 4px 0 var(--ink);
+  }
+  .pill:active{transform:translateY(4px);box-shadow:none}
+  .pill.stars{background:var(--card)}
+  .pill.avatar{background:var(--b);font-size:22px;padding:4px 12px}
 
-  /* Titres */
-  h1.logo{color:#fff;text-align:center;font-size:clamp(28px,7vw,46px);font-weight:900;
-    text-shadow:0 4px 0 rgba(0,0,0,.18);margin:8px 0 4px;line-height:1.1}
-  .subtitle{color:#fff;text-align:center;font-weight:700;opacity:.95;margin-bottom:18px;font-size:clamp(14px,3.5vw,18px)}
-  h2.q{text-align:center;color:#fff;font-size:clamp(20px,5vw,30px);font-weight:900;margin:6px 0 18px;text-shadow:0 3px 0 rgba(0,0,0,.15)}
+  /* ---- Titres ---- */
+  h1.logo{text-align:center;font-size:clamp(30px,8vw,52px);font-weight:900;line-height:1;
+    letter-spacing:-1px;margin:10px 0 6px;
+    text-shadow:3px 3px 0 var(--y),6px 6px 0 var(--ink)}
+  .subtitle{text-align:center;font-weight:800;color:var(--ink-soft);margin-bottom:18px;font-size:clamp(15px,3.6vw,19px)}
+  h2.q{text-align:center;font-size:clamp(20px,5.2vw,30px);font-weight:900;margin:4px 0 16px;text-wrap:balance}
+  .eyebrow{display:block;text-align:center;text-transform:uppercase;letter-spacing:3px;
+    font-weight:900;font-size:13px;color:var(--ink-soft);margin-bottom:2px}
 
-  /* Cartes / grilles */
-  .card{background:#fff;border-radius:26px;box-shadow:var(--ombre);padding:20px}
+  /* ---- Grilles ---- */
   .grid{display:grid;gap:14px}
   .cols-2{grid-template-columns:repeat(2,1fr)}
   .cols-3{grid-template-columns:repeat(3,1fr)}
   .cols-4{grid-template-columns:repeat(4,1fr)}
-  .cols-auto{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
 
-  /* Sélecteur d'âge */
+  /* ---- Écran d'accueil ---- */
+  .hero{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:14px 0}
+  .mascot{font-size:clamp(80px,26vw,150px);line-height:1;animation:wobble 2.6s ease-in-out infinite;filter:drop-shadow(0 10px 0 rgba(36,27,77,.15))}
+  @keyframes wobble{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(5deg)}}
+  .cta{
+    background:var(--g);color:#fff;border:var(--border);border-radius:22px;
+    font-size:clamp(22px,6vw,30px);font-weight:900;padding:18px 40px;cursor:pointer;
+    box-shadow:var(--shadow-lg);margin-top:6px;
+  }
+  .cta:active{transform:translateY(9px);box-shadow:0 0 0 var(--ink)}
+
+  /* ---- Avatars & âges ---- */
+  .pickgrid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(74px,1fr))}
+  .pick{
+    aspect-ratio:1;display:flex;align-items:center;justify-content:center;
+    font-size:clamp(30px,9vw,44px);border:var(--border);border-radius:18px;cursor:pointer;
+    background:var(--card);box-shadow:var(--shadow);transition:transform .08s,box-shadow .08s;
+  }
+  .pick:active{transform:translateY(6px);box-shadow:0 0 0 var(--ink)}
+  .pick.sel{background:var(--y);transform:rotate(-3deg)}
   .age-grid{grid-template-columns:repeat(5,1fr)}
   .age-btn{
-    aspect-ratio:1;border:none;border-radius:22px;cursor:pointer;
-    font-size:clamp(22px,6vw,34px);font-weight:900;color:#fff;
-    display:flex;align-items:center;justify-content:center;box-shadow:var(--ombre-btn);
-    transition:transform .1s;
+    aspect-ratio:1;border:var(--border);border-radius:20px;cursor:pointer;color:#fff;
+    font-size:clamp(24px,6.5vw,38px);font-weight:900;display:flex;align-items:center;justify-content:center;
+    box-shadow:var(--shadow);transition:transform .08s,box-shadow .08s;
   }
-  .age-btn:active{transform:translateY(4px);box-shadow:none}
-  .age-btn:nth-child(10n+1){background:var(--rose)}
-  .age-btn:nth-child(10n+2){background:var(--bleu)}
-  .age-btn:nth-child(10n+3){background:var(--vert)}
-  .age-btn:nth-child(10n+4){background:var(--orange)}
-  .age-btn:nth-child(10n+5){background:var(--turquoise)}
-  .age-btn:nth-child(10n+6){background:var(--violet)}
-  .age-btn:nth-child(10n+7){background:var(--rouge)}
-  .age-btn:nth-child(10n+8){background:var(--jaune);color:var(--sombre);text-shadow:none}
-  .age-btn:nth-child(10n+9){background:#8854d0}
-  .age-btn:nth-child(10n){background:#e84393}
+  .age-btn:active{transform:translateY(6px);box-shadow:0 0 0 var(--ink)}
+  .age-btn:nth-child(6n+1){background:var(--r)} .age-btn:nth-child(6n+2){background:var(--b)}
+  .age-btn:nth-child(6n+3){background:var(--g)} .age-btn:nth-child(6n+4){background:var(--o)}
+  .age-btn:nth-child(6n+5){background:var(--p)} .age-btn:nth-child(6n){background:var(--pink)}
 
-  /* Boutons de jeu (menu) */
+  /* ---- Tuiles de jeux ---- */
   .game-btn{
-    border:none;border-radius:24px;cursor:pointer;padding:18px 12px;color:#fff;
-    display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;
-    font-weight:900;font-size:clamp(14px,3.4vw,18px);box-shadow:var(--ombre-btn);
-    transition:transform .1s;min-height:130px;justify-content:center;
+    border:var(--border);border-radius:24px;cursor:pointer;padding:16px 10px;color:#fff;
+    display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;
+    font-weight:900;font-size:clamp(14px,3.6vw,18px);box-shadow:var(--shadow);
+    transition:transform .08s,box-shadow .08s;min-height:132px;justify-content:center;
   }
-  .game-btn .emoji{font-size:clamp(38px,10vw,52px);line-height:1}
-  .game-btn small{font-weight:700;opacity:.9;font-size:12px}
-  .game-btn:active{transform:translateY(4px);box-shadow:none}
+  .game-btn .emoji{font-size:clamp(40px,10vw,54px);line-height:1;filter:drop-shadow(0 3px 0 rgba(36,27,77,.25))}
+  .game-btn small{font-weight:800;opacity:.95;font-size:12px}
+  .game-btn:active{transform:translateY(6px);box-shadow:0 0 0 var(--ink)}
 
-  /* Options de réponse */
-  .options{display:grid;gap:14px;margin-top:6px}
+  /* ---- QCM ---- */
+  .options{display:grid;gap:14px;margin-top:4px}
   .opt{
-    border:none;border-radius:22px;cursor:pointer;background:#fff;color:var(--sombre);
-    font-size:clamp(22px,6vw,34px);font-weight:900;padding:22px 10px;box-shadow:var(--ombre-btn);
-    transition:transform .1s;min-height:78px;
+    border:var(--border);border-radius:20px;cursor:pointer;background:var(--card);color:var(--ink);
+    font-size:clamp(22px,6vw,32px);font-weight:900;padding:20px 10px;box-shadow:var(--shadow);
+    transition:transform .08s,box-shadow .08s;min-height:74px;
   }
-  .opt.small{font-size:clamp(18px,4.5vw,24px)}
-  .opt:active{transform:translateY(4px);box-shadow:none}
-  .opt.good{background:var(--vert)!important;color:#fff;animation:goodPulse .5s}
-  .opt.bad{background:var(--rouge)!important;color:#fff;animation:shake .4s}
-  @keyframes goodPulse{0%{transform:scale(1)}50%{transform:scale(1.08)}100%{transform:scale(1)}}
-  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+  .opt.small{font-size:clamp(17px,4.4vw,22px)}
+  .opt:active{transform:translateY(6px);box-shadow:0 0 0 var(--ink)}
+  .opt.good{background:var(--g)!important;color:#fff;animation:goodPulse .5s}
+  .opt.bad{background:var(--r)!important;color:#fff;animation:shake .4s}
+  @keyframes goodPulse{0%{transform:scale(1)}50%{transform:scale(1.07)}100%{transform:scale(1)}}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
 
-  .big-emoji{font-size:clamp(70px,22vw,120px);text-align:center;line-height:1;margin:6px 0 14px}
-  .prompt-box{background:#fff;border-radius:24px;padding:18px;text-align:center;box-shadow:var(--ombre);margin-bottom:16px}
-  .prompt-box .txt{font-size:clamp(26px,7vw,42px);font-weight:900;letter-spacing:2px}
+  .big-emoji{font-size:clamp(70px,22vw,120px);text-align:center;line-height:1;margin:6px 0 12px}
+  .prompt-box{background:var(--card);border:var(--border);border-radius:22px;padding:18px;text-align:center;box-shadow:var(--shadow);margin-bottom:16px}
+  .prompt-box .txt{font-size:clamp(26px,7vw,44px);font-weight:900;letter-spacing:2px;font-variant-numeric:tabular-nums}
 
-  /* Barre de progression */
-  .progress{height:16px;background:rgba(255,255,255,.3);border-radius:10px;overflow:hidden;margin:4px 0 16px}
-  .progress > span{display:block;height:100%;background:linear-gradient(90deg,var(--jaune),var(--vert));width:0;transition:width .4s;border-radius:10px}
+  .progress{height:16px;background:var(--card);border:var(--border);border-radius:12px;overflow:hidden;margin:2px 0 16px}
+  .progress > span{display:block;height:100%;background:var(--g);width:0;transition:width .4s}
 
-  /* Chasse aux objets */
+  /* ---- Chasse aux objets ---- */
   .hunt-item{
-    display:flex;align-items:center;gap:12px;background:#fff;border-radius:18px;padding:12px 14px;
-    box-shadow:0 4px 12px rgba(0,0,0,.08);cursor:pointer;transition:.15s;border:3px solid transparent;
+    display:flex;align-items:center;gap:12px;background:var(--card);border:var(--border);border-radius:18px;
+    padding:11px 14px;box-shadow:0 4px 0 var(--ink);cursor:pointer;transition:transform .08s,box-shadow .08s;
   }
+  .hunt-item:active{transform:translateY(4px);box-shadow:none}
   .hunt-item .he{font-size:34px}
   .hunt-item .hn{font-weight:800;font-size:clamp(15px,4vw,19px);flex:1}
-  .hunt-item .check{width:34px;height:34px;border-radius:50%;border:3px solid #ddd;display:flex;align-items:center;justify-content:center;font-size:20px;color:transparent}
-  .hunt-item.found{background:#eafaf0;border-color:var(--vert)}
-  .hunt-item.found .check{background:var(--vert);border-color:var(--vert);color:#fff}
-  .hunt-item.found .hn{text-decoration:line-through;opacity:.6}
+  .hunt-item .check{width:34px;height:34px;border-radius:10px;border:var(--border);display:flex;align-items:center;justify-content:center;font-size:20px;color:transparent}
+  .hunt-item.found{background:#DFFBF3}
+  .hunt-item.found .check{background:var(--g);color:#fff}
+  .hunt-item.found .hn{text-decoration:line-through;opacity:.55}
 
-  /* Memory */
+  /* ---- Memory ---- */
   .mem-grid{display:grid;gap:10px}
   .mem-card{
-    aspect-ratio:1;border-radius:18px;cursor:pointer;position:relative;
+    aspect-ratio:1;border:var(--border);border-radius:18px;cursor:pointer;
     font-size:clamp(28px,9vw,46px);display:flex;align-items:center;justify-content:center;
-    background:linear-gradient(135deg,var(--violet),var(--rose));box-shadow:var(--ombre-btn);
-    transition:transform .2s;
+    background:var(--p);color:#fff;box-shadow:var(--shadow);transition:transform .12s,box-shadow .08s;
   }
-  .mem-card .face{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    backface-visibility:hidden;border-radius:18px}
-  .mem-card .back{background:linear-gradient(135deg,var(--violet),var(--bleu));color:#fff;font-size:30px}
-  .mem-card .front{background:#fff;transform:rotateY(180deg)}
-  .mem-card.flip{transform:rotateY(180deg)}
-  .mem-card.flip .back{opacity:0}
-  .mem-card.matched{opacity:.55}
+  .mem-card:active{transform:translateY(4px)}
+  .mem-card.up{background:var(--card);color:var(--ink);animation:goodPulse .3s}
+  .mem-card.matched{background:#DFFBF3;border-color:var(--g);box-shadow:0 4px 0 var(--g);opacity:.85}
 
-  /* Feedback / célébration */
-  .feedback{text-align:center;color:#fff;font-size:clamp(22px,6vw,34px);font-weight:900;min-height:44px;margin-top:14px;text-shadow:0 3px 0 rgba(0,0,0,.15)}
+  /* ---- Construction ---- */
+  .build-wrap{display:flex;flex-direction:column;gap:12px}
+  .build-grid{display:grid;gap:3px;background:var(--ink);border:var(--border);border-radius:16px;padding:6px;box-shadow:var(--shadow);width:100%;aspect-ratio:var(--ar,1)}
+  .bcell{border-radius:6px;background:rgba(255,255,255,.06);cursor:pointer;transition:transform .05s}
+  .bcell:active{transform:scale(.86)}
+  .bcell.ghost{opacity:.22}
+  .bcell.block{box-shadow:inset 0 -5px 0 rgba(0,0,0,.20), inset 0 3px 0 rgba(255,255,255,.30)}
+  .mini{display:grid;gap:1px;width:74px;height:74px;background:var(--ink);border:2px solid var(--ink);border-radius:8px;padding:2px;flex:none}
+  .mini i{border-radius:1px;display:block}
+  .palette{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+  .swatch{width:44px;height:44px;border:var(--border);border-radius:12px;cursor:pointer;box-shadow:0 4px 0 var(--ink);transition:transform .08s,box-shadow .08s}
+  .swatch:active{transform:translateY(4px);box-shadow:none}
+  .swatch.sel{transform:translateY(-3px) rotate(-6deg);box-shadow:0 7px 0 var(--ink)}
+  .swatch.tool{background:var(--card);display:flex;align-items:center;justify-content:center;font-size:22px}
+
+  /* ---- Divers ---- */
+  .feedback{text-align:center;font-size:clamp(22px,6vw,32px);font-weight:900;min-height:40px;margin-top:12px}
+  .card{background:var(--card);border:var(--border);border-radius:26px;box-shadow:var(--shadow-lg);padding:22px}
   .btn-primary{
-    display:block;width:100%;border:none;border-radius:22px;background:var(--jaune);color:var(--sombre);
-    font-size:clamp(18px,5vw,24px);font-weight:900;padding:18px;cursor:pointer;box-shadow:var(--ombre-btn);margin-top:14px;
+    display:block;width:100%;border:var(--border);border-radius:20px;background:var(--y);color:var(--ink);
+    font-size:clamp(18px,5vw,24px);font-weight:900;padding:16px;cursor:pointer;box-shadow:var(--shadow);margin-top:12px;
+    transition:transform .08s,box-shadow .08s;
   }
-  .btn-primary:active{transform:translateY(4px);box-shadow:none}
-  .btn-ghost{background:rgba(255,255,255,.9);color:var(--violet)}
-
+  .btn-primary:active{transform:translateY(6px);box-shadow:0 0 0 var(--ink)}
+  .btn-ghost{background:var(--card)}
+  .btn-green{background:var(--g);color:#fff}
   .center{text-align:center}
   .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
-  .chip{background:rgba(255,255,255,.9);border:none;border-radius:16px;padding:12px 18px;font-weight:900;cursor:pointer;box-shadow:var(--ombre-btn);color:var(--violet);font-size:16px}
-  .chip.active{background:var(--jaune);color:var(--sombre)}
-  .chip:active{transform:translateY(3px);box-shadow:none}
+  .chip{background:var(--card);border:var(--border);border-radius:15px;padding:10px 16px;font-weight:900;cursor:pointer;box-shadow:0 4px 0 var(--ink);font-size:15px;transition:transform .08s,box-shadow .08s}
+  .chip.active{background:var(--y)}
+  .chip:active{transform:translateY(4px);box-shadow:none}
 
-  /* Confetti */
   #confetti{position:fixed;inset:0;pointer-events:none;z-index:50;overflow:hidden}
-  .confetti-piece{position:absolute;top:-30px;font-size:26px;animation:fall linear forwards}
-  @keyframes fall{to{transform:translateY(110vh) rotate(720deg);opacity:1}}
+  .confetti-piece{position:absolute;top:-30px;animation:fall linear forwards}
+  @keyframes fall{to{transform:translateY(112vh) rotate(720deg)}}
 
-  footer{color:#fff;text-align:center;opacity:.85;font-weight:700;font-size:12px;padding:14px}
+  footer{text-align:center;color:var(--ink-soft);font-weight:800;font-size:12px;padding:14px}
 
-  @media(max-width:420px){
+  @media(prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important}
+  }
+  @media(max-width:430px){
     .age-grid{grid-template-columns:repeat(4,1fr)}
     #app{padding:12px}
   }
@@ -169,160 +221,171 @@
 <body>
 <div id="app"></div>
 <div id="confetti"></div>
-<footer>🎈 Jouons &amp; Apprenons · Fait avec ❤️ pour les enfants curieux</footer>
+<footer>🧱 Bric-à-Blocs · Fait avec ❤️ pour les enfants curieux</footer>
 
 <script>
-/* ============================================================
-   JOUONS & APPRENONS — jeu éducatif 3-12 ans
+/* =====================================================================
+   BRIC-À-BLOCS — jeu éducatif 3-12 ans
    Un seul fichier, aucune dépendance, fonctionne hors-ligne.
-   ============================================================ */
-
+   ===================================================================== */
 const app = document.getElementById('app');
 
-const state = {
-  age: null,
-  stars: 0,          // étoiles gagnées (session)
-  streak: 0,
-  game: null,
-};
+const state = { avatar:null, age:null, stars:0, streak:0, game:null };
 
 /* ---------- utilitaires ---------- */
-const rand = (n)=>Math.floor(Math.random()*n);
-const randInt = (a,b)=>a+Math.floor(Math.random()*(b-a+1));
-const pick = (arr)=>arr[rand(arr.length)];
-const shuffle = (arr)=>{const a=[...arr];for(let i=a.length-1;i>0;i--){const j=rand(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;};
-const sample = (arr,n)=>shuffle(arr).slice(0,n);
+const rand=(n)=>Math.floor(Math.random()*n);
+const randInt=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
+const pick=(a)=>a[rand(a.length)];
+const shuffle=(a)=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=rand(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;};
+const sample=(a,n)=>shuffle(a).slice(0,n);
+const tier=(age)=>age<=5?'petit':age<=8?'moyen':'grand';
 
-// tranche d'âge : 'petit' (3-5), 'moyen' (6-8), 'grand' (9-12)
-function tier(age){ return age<=5?'petit':age<=8?'moyen':'grand'; }
-
-/* ---------- sons (Web Audio, sans fichier) ---------- */
+/* ---------- sons (Web Audio) ---------- */
 let actx;
-function beep(freqs, dur=0.12, type='sine'){
+function beep(freqs,dur=0.12,type='sine'){
   try{
-    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
-    let t = actx.currentTime;
-    freqs.forEach((f,i)=>{
-      const o=actx.createOscillator(), g=actx.createGain();
-      o.type=type; o.frequency.value=f;
-      o.connect(g); g.connect(actx.destination);
-      g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.25,t+0.01);
+    actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    let t=actx.currentTime;
+    freqs.forEach(f=>{
+      const o=actx.createOscillator(),g=actx.createGain();
+      o.type=type;o.frequency.value=f;o.connect(g);g.connect(actx.destination);
+      g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.25,t+0.01);
       g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-      o.start(t); o.stop(t+dur); t+=dur*0.9;
+      o.start(t);o.stop(t+dur);t+=dur*0.9;
     });
   }catch(e){}
 }
-const sndGood = ()=>beep([523,659,784],0.13,'triangle');
-const sndWin  = ()=>beep([523,659,784,1046],0.16,'triangle');
-const sndBad  = ()=>beep([200,150],0.18,'sawtooth');
-const sndClick= ()=>beep([440],0.05,'square');
+const sndGood=()=>beep([523,659,784],0.12,'triangle');
+const sndWin =()=>beep([523,659,784,1046],0.15,'triangle');
+const sndBad =()=>beep([200,150],0.17,'sawtooth');
+const sndClick=()=>beep([440],0.05,'square');
+const sndPlace=()=>beep([330,494],0.06,'square');
 
 /* ---------- confetti ---------- */
-function confetti(n=40){
+function confetti(n=44){
   const box=document.getElementById('confetti');
-  const emojis=['🎉','⭐','🌟','🎊','✨','🥳','🏆','💫','🎈'];
+  const em=['🎉','⭐','🌟','🎊','✨','🥳','🏆','💫','🧱','🎈'];
   for(let i=0;i<n;i++){
     const s=document.createElement('div');
-    s.className='confetti-piece';
-    s.textContent=pick(emojis);
+    s.className='confetti-piece';s.textContent=pick(em);
     s.style.left=Math.random()*100+'vw';
-    s.style.animationDuration=(1.6+Math.random()*1.8)+'s';
-    s.style.fontSize=(18+Math.random()*22)+'px';
-    box.appendChild(s);
-    setTimeout(()=>s.remove(),3600);
+    s.style.animationDuration=(1.6+Math.random()*1.9)+'s';
+    s.style.fontSize=(18+Math.random()*24)+'px';
+    box.appendChild(s);setTimeout(()=>s.remove(),3700);
   }
 }
 
-/* ---------- gestion des étoiles ---------- */
+/* ---------- étoiles ---------- */
 function addStar(n=1){
-  state.stars+=n; state.streak++;
+  state.stars+=n;state.streak++;
   const el=document.getElementById('stars-badge');
   if(el) el.textContent='⭐ '+state.stars;
 }
-function resetStreak(){ state.streak=0; }
+function resetStreak(){state.streak=0;}
 
 /* ---------- barre du haut ---------- */
 function bar(title){
   return `<header class="bar">
-    <button class="home-btn" onclick="goHome()">🏠</button>
-    <div class="infos">
-      <span class="badge">${title}</span>
-      <span class="badge stars" id="stars-badge">⭐ ${state.stars}</span>
-    </div>
+    <button class="home-btn" onclick="showMenu()">🏠</button>
+    <span class="pill">${title}</span>
+    <span class="spacer"></span>
+    <span class="pill avatar" onclick="pickAvatar()" title="Changer d'avatar">${state.avatar||'🙂'}</span>
+    <span class="pill" onclick="pickAge()" title="Changer d'âge">${state.age} ans</span>
+    <span class="pill stars" id="stars-badge">⭐ ${state.stars}</span>
   </header>`;
 }
 
-/* ============================================================
-   ÉCRAN 1 — ACCUEIL / CHOIX DE L'ÂGE
-   ============================================================ */
-function goHome(){
+/* =====================================================================
+   ACCUEIL
+   ===================================================================== */
+function welcome(){
   state.game=null;
-  let ages='';
-  for(let a=3;a<=12;a++){
-    ages+=`<button class="age-btn" onclick="chooseAge(${a})">${a}</button>`;
-  }
-  app.innerHTML=`<div class="screen">
-    <h1 class="logo">🎈 Jouons &amp; Apprenons</h1>
-    <p class="subtitle">Choisis ton âge pour découvrir tes jeux 👇</p>
-    <div class="card">
-      <div class="grid age-grid">${ages}</div>
-    </div>
-    ${state.stars>0?`<p class="subtitle" style="margin-top:16px">Tu as déjà gagné <b>${state.stars} ⭐</b> — bravo&nbsp;!</p>`:''}
+  app.innerHTML=`<div class="screen hero">
+    <span class="mascot">${state.avatar||'🧱'}</span>
+    <h1 class="logo">Bric-à-Blocs</h1>
+    <p class="subtitle">Construis, observe, calcule &amp; apprends en t'amusant&nbsp;!</p>
+    <button class="cta" onclick="beginFlow()">🚀 Jouer</button>
+    ${state.stars>0?`<p class="subtitle" style="margin-top:10px">Déjà <b>${state.stars} ⭐</b> gagnées — bravo&nbsp;!</p>`:''}
   </div>`;
 }
+function beginFlow(){ sndClick(); state.avatar?(state.age?showMenu():pickAge()):pickAvatar(); }
 
-function chooseAge(a){
-  sndClick();
-  state.age=a;
-  showMenu();
+/* ---------- choix de l'avatar ---------- */
+const AVATARS={
+  '🐾 Animaux':['🦊','🐼','🐸','🦁','🐵','🐧','🦉','🐯','🐨','🐷','🐰','🐬'],
+  '🤖 Robots & espace':['🤖','👾','🚀','🛸','⚡','👽'],
+  '✨ Fantastique':['🦄','🐉','🧚','🦖','🧙','🦸'],
+};
+function pickAvatar(){
+  let html='';
+  for(const [grp,list] of Object.entries(AVATARS)){
+    html+=`<p class="eyebrow" style="text-align:left;margin:14px 0 8px">${grp}</p>
+      <div class="pickgrid">${list.map(a=>`
+        <div class="pick ${state.avatar===a?'sel':''}" onclick="chooseAvatar('${a}')">${a}</div>`).join('')}</div>`;
+  }
+  app.innerHTML=`<div class="screen">
+    <h1 class="logo" style="font-size:clamp(24px,7vw,40px)">Choisis ton héros&nbsp;!</h1>
+    <p class="subtitle">Il t'accompagnera dans tous les jeux 🎮</p>
+    <div class="card">${html}</div>
+  </div>`;
 }
+function chooseAvatar(a){ sndGood(); state.avatar=a; setTimeout(()=> state.age?showMenu():pickAge(), 250); }
 
-/* ============================================================
-   ÉCRAN 2 — MENU DES JEUX (adapté à l'âge)
-   ============================================================ */
-const GAMES = [
-  {id:'calcul',  emoji:'🔢', nom:'Calcul Malin',   desc:'Nombres & maths',      min:3, color:'var(--bleu)'},
-  {id:'mots',    emoji:'🔤', nom:'Les Mots',        desc:'Lettres & lecture',    min:3, color:'var(--rose)'},
-  {id:'chasse',  emoji:'🔍', nom:'Chasse aux Objets',desc:'À trouver autour de toi', min:3, color:'var(--vert)'},
-  {id:'memory',  emoji:'🧠', nom:'Memory',          desc:'Trouve les paires',    min:3, color:'var(--orange)'},
-  {id:'formes',  emoji:'🎨', nom:'Couleurs & Formes',desc:'Observe bien',        min:3, max:8, color:'var(--turquoise)'},
-  {id:'intrus',  emoji:'🕵️', nom:"Trouve l'Intrus", desc:'Logique & réflexion',  min:5, color:'var(--rouge)'},
-  {id:'quiz',    emoji:'🌍', nom:'Quiz Découverte',  desc:'Anim., nature, monde', min:6, color:'var(--violet)'},
-  {id:'cahier',  emoji:'📒', nom:'Cahier de Vacances',desc:'Défis mélangés',      min:5, color:'#e84393'},
+/* ---------- choix de l'âge ---------- */
+function pickAge(){
+  let ages='';
+  for(let a=3;a<=12;a++) ages+=`<button class="age-btn" onclick="chooseAge(${a})">${a}</button>`;
+  app.innerHTML=`<div class="screen">
+    <div class="row" style="justify-content:flex-start;margin-bottom:8px">
+      <span class="mascot" style="font-size:56px;animation:none">${state.avatar||'🙂'}</span>
+    </div>
+    <h1 class="logo" style="font-size:clamp(24px,7vw,40px)">Quel âge as-tu&nbsp;?</h1>
+    <p class="subtitle">Les jeux s'adaptent à toi 👇</p>
+    <div class="card"><div class="grid age-grid">${ages}</div></div>
+  </div>`;
+}
+function chooseAge(a){ sndClick(); state.age=a; showMenu(); }
+
+/* =====================================================================
+   MENU
+   ===================================================================== */
+const GAMES=[
+  {id:'construire',emoji:'🧱',nom:'Construction',desc:'Blocs : maison, camion…',min:3,color:'var(--r)'},
+  {id:'chasse',    emoji:'🔍',nom:'Chasse aux Objets',desc:'À trouver autour de toi',min:3,color:'var(--g)'},
+  {id:'calcul',    emoji:'🔢',nom:'Calcul Malin',desc:'Nombres & maths',min:3,color:'var(--b)'},
+  {id:'mots',      emoji:'🔤',nom:'Les Mots',desc:'Lettres & lecture',min:3,color:'var(--pink)'},
+  {id:'memory',    emoji:'🧠',nom:'Memory',desc:'Trouve les paires',min:3,color:'var(--o)'},
+  {id:'formes',    emoji:'🎨',nom:'Couleurs & Formes',desc:'Observe bien',min:3,max:8,color:'var(--p)'},
+  {id:'intrus',    emoji:'🕵️',nom:"Trouve l'Intrus",desc:'Logique & réflexion',min:5,color:'#E8556B'},
+  {id:'quiz',      emoji:'🌍',nom:'Quiz Découverte',desc:'Animaux, nature, monde',min:6,color:'#3AA0FF'},
+  {id:'cahier',    emoji:'📒',nom:'Cahier de Vacances',desc:'Défis mélangés',min:5,color:'#00B894'},
 ];
-
 function showMenu(){
+  state.game=null;
   const list=GAMES.filter(g=>state.age>=g.min && state.age<=(g.max||99));
   const btns=list.map(g=>`
     <button class="game-btn" style="background:${g.color}" onclick="startGame('${g.id}')">
-      <span class="emoji">${g.emoji}</span>
-      <span>${g.nom}</span>
-      <small>${g.desc}</small>
+      <span class="emoji">${g.emoji}</span><span>${g.nom}</span><small>${g.desc}</small>
     </button>`).join('');
   app.innerHTML=`<div class="screen">
-    ${bar('J\'ai '+state.age+' ans')}
-    <h2 class="q">Quel jeu veux-tu jouer&nbsp;?</h2>
+    ${bar('Menu')}
+    <h2 class="q">Choisis ton jeu, ${state.avatar} !</h2>
     <div class="grid cols-2">${btns}</div>
   </div>`;
 }
-
 function startGame(id){
-  sndClick(); resetStreak();
-  ({calcul:gameCalcul, mots:gameMots, chasse:gameChasse, memory:gameMemory,
-    formes:gameFormes, intrus:gameIntrus, quiz:gameQuiz, cahier:gameCahier})[id]();
+  sndClick();resetStreak();
+  ({construire:gameConstruire,chasse:gameChasse,calcul:gameCalcul,mots:gameMots,
+    memory:gameMemory,formes:gameFormes,intrus:gameIntrus,quiz:gameQuiz,cahier:gameCahier})[id]();
 }
 
-/* ============================================================
-   MOTEUR GÉNÉRIQUE DE QUESTIONS (QCM)
-   Une "manche" = 5 questions. À chaque bonne réponse : +1 ⭐.
-   ============================================================ */
+/* =====================================================================
+   MOTEUR QCM  (une manche = 5 questions ; +1 ⭐ par bonne réponse)
+   ===================================================================== */
 function quizRound(cfg){
-  // cfg: {title, total, makeQuestion()->{promptHTML, options:[{label,ok}], hint?}}
-  let idx=0, correct=0;
-  const total=cfg.total||5;
-
+  let idx=0,correct=0;const total=cfg.total||5;
   function render(){
-    if(idx>=total){ return endRound(cfg.title, correct, total); }
+    if(idx>=total) return endRound(cfg.title,correct,total);
     const Q=cfg.makeQuestion();
     const opts=shuffle(Q.options);
     app.innerHTML=`<div class="screen">
@@ -330,214 +393,167 @@ function quizRound(cfg){
       <div class="progress"><span style="width:${(idx/total)*100}%"></span></div>
       <h2 class="q">${Q.instruction||''}</h2>
       ${Q.promptHTML||''}
-      <div class="options ${Q.cols||'cols-2'}">
-        ${opts.map((o,i)=>`<button class="opt ${Q.small?'small':''}" data-i="${i}">${o.label}</button>`).join('')}
-      </div>
+      <div class="options"></div>
       <div class="feedback" id="fb"></div>
     </div>`;
-    // grille
     const box=app.querySelector('.options');
-    box.classList.add('grid');
-    box.style.gridTemplateColumns = Q.cols==='cols-1'?'1fr':Q.cols==='cols-3'?'repeat(3,1fr)':'repeat(2,1fr)';
-
-    app.querySelectorAll('.opt').forEach(btn=>{
+    box.style.gridTemplateColumns=Q.cols==='cols-1'?'1fr':Q.cols==='cols-4'?'repeat(4,1fr)':Q.cols==='cols-3'?'repeat(3,1fr)':'repeat(2,1fr)';
+    box.innerHTML=opts.map((o,i)=>`<button class="opt ${Q.small?'small':''}" data-i="${i}">${o.label}</button>`).join('');
+    box.querySelectorAll('.opt').forEach(btn=>{
       btn.onclick=()=>{
         const chosen=opts[+btn.dataset.i];
-        app.querySelectorAll('.opt').forEach(b=>b.disabled=true);
+        box.querySelectorAll('.opt').forEach(b=>b.disabled=true);
         const fb=document.getElementById('fb');
         if(chosen.ok){
-          btn.classList.add('good'); sndGood(); correct++; addStar();
+          btn.classList.add('good');sndGood();correct++;addStar();
           fb.textContent=pick(['Bravo ! 🎉','Super ! ⭐','Génial ! 👏','Exact ! 🌟','Bien joué ! 💪']);
         }else{
-          btn.classList.add('bad'); sndBad(); resetStreak();
-          // montrer la bonne
-          app.querySelectorAll('.opt').forEach((b,i)=>{ if(opts[i].ok) b.classList.add('good'); });
+          btn.classList.add('bad');sndBad();resetStreak();
+          box.querySelectorAll('.opt').forEach((b,i)=>{if(opts[i].ok)b.classList.add('good');});
           fb.textContent=Q.wrongMsg||'Presque ! 😊';
         }
-        setTimeout(()=>{ idx++; render(); }, chosen.ok?750:1300);
+        setTimeout(()=>{idx++;render();},chosen.ok?750:1300);
       };
     });
   }
   render();
 }
-
-function endRound(title, correct, total){
+function endRound(title,correct,total){
   const perfect=correct===total;
-  if(correct>=Math.ceil(total*0.6)) confetti(perfect?60:30);
-  if(perfect) sndWin();
-  const stars = correct>=total?'⭐⭐⭐' : correct>=total*0.6?'⭐⭐' : correct>0?'⭐':'💪';
-  const msg = perfect?'PARFAIT ! Tu es un champion 🏆'
-            : correct>=total*0.6?'Très bien joué ! 🎉'
-            : correct>0?'Bien essayé, continue ! 😊'
-            : 'On réessaie ensemble ? 💪';
+  if(correct>=Math.ceil(total*0.6))confetti(perfect?64:32);
+  if(perfect)sndWin();
+  const stars=correct>=total?'⭐⭐⭐':correct>=total*0.6?'⭐⭐':correct>0?'⭐':'💪';
+  const msg=perfect?'PARFAIT ! Champion 🏆':correct>=total*0.6?'Très bien joué ! 🎉':correct>0?'Continue, tu progresses ! 😊':'On réessaie ensemble ? 💪';
   app.innerHTML=`<div class="screen">
     ${bar(title)}
     <div class="card center">
       <div class="big-emoji">${perfect?'🏆':correct>0?'🎉':'🌱'}</div>
-      <h2 style="font-size:28px;color:var(--violet)">${msg}</h2>
-      <p style="font-size:40px;margin:10px 0">${stars}</p>
-      <p style="font-weight:800;font-size:20px">Score : ${correct} / ${total}</p>
-      <button class="btn-primary" onclick="startGame('${state.game}')">🔄 Rejouer</button>
+      <h2 style="font-size:26px">${msg}</h2>
+      <p style="font-size:40px;margin:8px 0">${stars}</p>
+      <p style="font-weight:900;font-size:20px">Score : ${correct} / ${total}</p>
+      <button class="btn-primary btn-green" onclick="startGame('${state.game}')">🔄 Rejouer</button>
       <button class="btn-primary btn-ghost" onclick="showMenu()">📚 Autres jeux</button>
     </div>
   </div>`;
 }
 
-/* ============================================================
-   JEU 1 — CALCUL MALIN
-   ============================================================ */
-function gameCalcul(){
-  state.game='calcul';
-  const t=tier(state.age);
-  quizRound({
-    title:'🔢 Calcul',
-    makeQuestion(){
-      if(t==='petit'){
-        // compter des objets
-        const emo=pick(['🍎','🐶','⭐','🎈','🚗','🌸','🐟','🍓']);
-        const n=randInt(1,state.age<=4?5:10);
-        const good=n;
-        let opts=new Set([good]);
-        while(opts.size<3) opts.add(randInt(1,10));
-        return {
-          instruction:'Compte les objets 🔢',
-          promptHTML:`<div class="prompt-box"><div style="font-size:38px;line-height:1.3">${emo.repeat(n)}</div></div>`,
-          cols:'cols-3',
-          options:[...opts].map(v=>({label:v,ok:v===good})),
-        };
-      }
-      if(t==='moyen'){
-        const add=Math.random()<0.6;
-        let a,b,good,sym;
-        if(add){ a=randInt(1,state.age<=6?10:20); b=randInt(1,state.age<=6?10:20); good=a+b; sym='+'; }
-        else{ a=randInt(2,20); b=randInt(1,a); good=a-b; sym='−'; }
-        let opts=new Set([good]);
-        while(opts.size<4) opts.add(Math.max(0,good+randInt(-4,4)));
-        return {
-          instruction:'Combien font…',
-          promptHTML:`<div class="prompt-box"><span class="txt">${a} ${sym} ${b} = ?</span></div>`,
-          options:[...opts].map(v=>({label:v,ok:v===good})),
-        };
-      }
-      // grand : x, ÷, problèmes
-      const type=pick(['x','x','÷','pb']);
-      if(type==='x'){
-        const a=randInt(2,10), b=randInt(2,10), good=a*b;
-        let opts=new Set([good]); while(opts.size<4) opts.add(good+randInt(-9,9)*pick([1,1,2]));
-        return {instruction:'Multiplication ✖️',
-          promptHTML:`<div class="prompt-box"><span class="txt">${a} × ${b} = ?</span></div>`,
-          options:[...opts].filter(v=>v>0).slice(0,4).map(v=>({label:v,ok:v===good}))};
-      }
-      if(type==='÷'){
-        const b=randInt(2,9), good=randInt(2,10), a=b*good;
-        let opts=new Set([good]); while(opts.size<4) opts.add(Math.max(1,good+randInt(-3,3)));
-        return {instruction:'Division ➗',
-          promptHTML:`<div class="prompt-box"><span class="txt">${a} ÷ ${b} = ?</span></div>`,
-          options:[...opts].map(v=>({label:v,ok:v===good}))};
-      }
-      // petit problème
-      const prix=randInt(2,9), qte=randInt(2,6), good=prix*qte;
-      let opts=new Set([good]); while(opts.size<4) opts.add(good+randInt(-8,8));
-      return {instruction:'Petit problème 🧩',
-        promptHTML:`<div class="prompt-box" style="font-size:20px;font-weight:800;padding:22px">Un jouet coûte ${prix} €.<br>Combien coûtent ${qte} jouets ?</div>`,
-        options:[...opts].filter(v=>v>0).slice(0,4).map(v=>({label:v+' €',ok:v===good}))};
-    }
-  });
-}
-
-/* ============================================================
-   JEU 2 — LES MOTS (français / lecture)
-   ============================================================ */
-const MOTS = [
-  {mot:'CHAT',emo:'🐱'},{mot:'CHIEN',emo:'🐶'},{mot:'SOLEIL',emo:'☀️'},{mot:'LUNE',emo:'🌙'},
-  {mot:'FLEUR',emo:'🌸'},{mot:'POMME',emo:'🍎'},{mot:'MAISON',emo:'🏠'},{mot:'VOITURE',emo:'🚗'},
-  {mot:'BALLON',emo:'🎈'},{mot:'POISSON',emo:'🐟'},{mot:'ARBRE',emo:'🌳'},{mot:'ÉTOILE',emo:'⭐'},
-  {mot:'GÂTEAU',emo:'🍰'},{mot:'CANARD',emo:'🦆'},{mot:'BANANE',emo:'🍌'},{mot:'ROBOT',emo:'🤖'},
-  {mot:'PAPILLON',emo:'🦋'},{mot:'ÉLÉPHANT',emo:'🐘'},{mot:'FRAISE',emo:'🍓'},{mot:'GRENOUILLE',emo:'🐸'},
-];
-const ORTHO = [
-  {bon:'aujourd\'hui',faux:['aujourdhui','ojourdhui']},
-  {bon:'beaucoup',faux:['beaucou','baucoup']},
-  {bon:'toujours',faux:['toujour','toujourd']},
-  {bon:'éléphant',faux:['élépant','élephan']},
-  {bon:'anniversaire',faux:['aniversaire','annivairsaire']},
-  {bon:'parce que',faux:['parceque','par ce que']},
-  {bon:'longtemps',faux:['lontemps','longtemp']},
-  {bon:'quelquefois',faux:['quelque fois','quelkefois']},
-  {bon:'nourriture',faux:['nouriture','nouritture']},
-  {bon:'dictionnaire',faux:['dictionaire','dixionnaire']},
-];
-function gameMots(){
-  state.game='mots';
-  const t=tier(state.age);
-  quizRound({
-    title:'🔤 Les Mots',
-    makeQuestion(){
-      if(t==='petit'){
-        // première lettre
-        const w=pick(MOTS);
-        const good=w.mot[0];
-        let letters=new Set([good]);
-        const alpha='ABCDEFGHIJKLMNOPRSTU';
-        while(letters.size<3) letters.add(alpha[rand(alpha.length)]);
-        return {instruction:'Par quelle lettre commence ce mot ?',
-          promptHTML:`<div class="prompt-box"><div class="big-emoji" style="margin:0">${w.emo}</div><div style="font-weight:800;font-size:20px">${w.mot.toLowerCase()}</div></div>`,
-          cols:'cols-3',
-          options:[...letters].map(l=>({label:l,ok:l===good}))};
-      }
-      if(t==='moyen'){
-        // lettre manquante
-        const w=pick(MOTS);
-        const i=randInt(1,w.mot.length-1);
-        const good=w.mot[i];
-        const shown=w.mot.split('').map((c,k)=>k===i?'_':c).join('');
-        let letters=new Set([good]);
-        const alpha='ABCDEFGHILMNOPRSTUV';
-        while(letters.size<4) letters.add(alpha[rand(alpha.length)]);
-        return {instruction:'Quelle lettre manque ?',
-          promptHTML:`<div class="prompt-box"><div style="font-size:40px;margin-bottom:8px">${w.emo}</div><span class="txt">${shown}</span></div>`,
-          cols:'cols-4',
-          options:[...letters].map(l=>({label:l,ok:l===good}))};
-      }
-      // grand : orthographe
-      const o=pick(ORTHO);
-      return {instruction:'Quel mot est bien orthographié ?',
-        cols:'cols-1',
-        options:[{label:o.bon,ok:true},...o.faux.map(f=>({label:f,ok:false}))].slice(0,3),
-        wrongMsg:'La bonne orthographe est en vert 👀'};
-    }
-  });
-}
-
-/* ============================================================
-   JEU 3 — CHASSE AUX OBJETS (I-Spy)  ✨ NOUVEAU
-   « J'ai vu une caravane ! » — coche ce que tu trouves autour de toi.
-   ============================================================ */
-const HUNT = {
-  interieur:{
-    petit:[['🪑','une chaise'],['🚪','une porte'],['📚','un livre'],['🧸','un doudou'],['🥄','une cuillère'],['🛏️','un lit'],['🪟','une fenêtre'],['🧦','une chaussette'],['🍽️','une assiette'],['💡','une lampe']],
-    moyen:[['🕰️','une horloge'],['🪞','un miroir'],['🧴','un flacon'],['🖼️','un tableau'],['🪥','une brosse à dents'],['🧹','un balai'],['🔌','une prise'],['📺','une télévision'],['🪴','une plante'],['🧊','un glaçon'],['🗝️','une clé'],['🧺','un panier']],
-    grand:[['🧭','une boussole'],['🔬','quelque chose en verre'],['📐','un objet triangulaire'],['🧮','quelque chose qui compte'],['🪝','un crochet'],['🧯','un extincteur'],['🕯️','une bougie'],['📎','un trombone'],['🔋','une pile'],['🧵','du fil'],['🪛','un tournevis'],['📕','un objet rouge']],
-  },
-  exterieur:{
-    petit:[['🌳','un arbre'],['🚗','une voiture'],['🐦','un oiseau'],['☁️','un nuage'],['🌸','une fleur'],['🐶','un chien'],['🏠','une maison'],['🍃','une feuille'],['⚽','un ballon'],['🚲','un vélo']],
-    moyen:[['🚌','un bus'],['🚐','une caravane'],['🐝','un insecte'],['🚦','un feu tricolore'],['🪧','un panneau'],['🐈','un chat'],['🌉','un pont'],['🏪','un magasin'],['🛴','une trottinette'],['🦆','un canard'],['🚧','un chantier'],['⛲','une fontaine']],
-    grand:[['🚚','un camion'],['🏛️','un bâtiment ancien'],['🚁','quelque chose qui vole'],['🦅','un oiseau de proie'],['🛑','un panneau STOP'],['🚒','un véhicule de secours'],['🌾','un champ'],['🗿','une statue'],['🧗','un mur d\'escalade'],['🚏','un arrêt de bus'],['🪟','une cheminée'],['🚉','une gare ou une voie']],
-  }
+/* =====================================================================
+   🧱 CONSTRUCTION (style blocs)
+   ===================================================================== */
+const BLOCK={R:'#FF5E5B',O:'#FF9F1C',Y:'#FFCA3A',G:'#22C3AE',B:'#3FC0F0',P:'#8A4FEC',
+  M:'#FF4D9D',N:'#B5651D',W:'#D8EEFF',K:'#3A3A5A',D:'#7A4B2B',S:'#9AA0B4'};
+const BLOCKNAME={R:'Rouge',O:'Orange',Y:'Jaune',G:'Vert',B:'Bleu',P:'Violet',M:'Rose',
+  N:'Marron',W:'Fenêtre',K:'Ardoise',D:'Porte',S:'Gris'};
+const BUILDS={
+  maison:{nom:'Maison',emoji:'🏠',w:7,rows:["..RRR..",".RRRRR.","RRRRRRR","YYYYYYY","YBYYYBY","YYYNYYY","YYYNYYY"]},
+  camion:{nom:'Camion',emoji:'🚚',w:10,rows:["....GGGGG.",".RRRGGGGG.",".RWRGGGGG.","RRRRGGGGGG","RRRRGGGGGG","..K....K.."]},
+  bus:{nom:'Bus',emoji:'🚌',w:10,rows:["OOOOOOOOOO","OWWOWWOWWO","OWWOWWOWWO","OOOOOOOOOO","OOOODDOOOO","..K....K.."]},
+  train:{nom:'Train',emoji:'🚂',w:10,rows:["..P.......",".PPP.RRRR.","PPPPPRRRR.","PPPPPRRRR.","PPPPPRRRR.",".K.K..K.K."]},
+  gare:{nom:'Gare',emoji:'🚉',w:9,rows:["...KKK...","..KKKKK..",".KKKKKKK.","NNNNNNNNN","NWNWNWNWN","NWNWNWNWN","NNNDDNNNN"]},
 };
-function gameChasse(){
-  state.game='chasse';
-  chasseSetup('mixte');
+function gameConstruire(){ state.game='construire'; buildSetup('maison'); }
+function buildSetup(modelKey){
+  const libre = modelKey==='libre';
+  const model = libre?{nom:'Libre',emoji:'🎨',w:10,rows:Array(10).fill('.'.repeat(10))}:BUILDS[modelKey];
+  const w=model.w, h=model.rows.length;
+  const target=model.rows.join('').split('');
+  const grid=Array(w*h).fill('.');
+  // couleurs proposées
+  let colors = libre ? ['R','O','Y','G','B','P','M','N','W','K']
+    : [...new Set(target.filter(c=>c!=='.'))];
+  let sel = colors[0];
+  let eraser=false;
+
+  const miniStyle=`grid-template-columns:repeat(${w},1fr)`;
+  const mini=`<div class="mini" style="${miniStyle}">${target.map(c=>
+    `<i style="background:${c==='.'?'transparent':BLOCK[c]}"></i>`).join('')}</div>`;
+
+  function paletteHTML(){
+    return `<div class="palette">
+      ${colors.map(c=>`<div class="swatch ${!eraser&&sel===c?'sel':''}" style="background:${BLOCK[c]}"
+          title="${BLOCKNAME[c]}" onclick="__bpick('${c}')"></div>`).join('')}
+      <div class="swatch tool ${eraser?'sel':''}" title="Gomme" onclick="__berase()">🧽</div>
+    </div>`;
+  }
+  function stats(){
+    let ok=0,tot=0,extra=0;
+    for(let i=0;i<target.length;i++){
+      if(target[i]!=='.'){tot++; if(grid[i]===target[i])ok++;}
+      else if(grid[i]!=='.')extra++;
+    }
+    return {ok,tot,extra,win:ok===tot && extra===0 && !libre};
+  }
+  function render(){
+    const s=stats();
+    app.innerHTML=`<div class="screen">
+      ${bar('🧱 Construction')}
+      <div class="row" style="margin-bottom:10px">
+        ${Object.entries(BUILDS).map(([k,v])=>`<button class="chip ${k===modelKey?'active':''}" onclick="buildSetup('${k}')">${v.emoji} ${v.nom}</button>`).join('')}
+        <button class="chip ${libre?'active':''}" onclick="buildSetup('libre')">🎨 Libre</button>
+      </div>
+      <div class="build-wrap">
+        <div class="row" style="justify-content:space-between;align-items:center;gap:14px">
+          <div style="display:flex;align-items:center;gap:12px">
+            ${libre?`<span style="font-size:40px">🎨</span><b>Construis ce que tu veux&nbsp;!</b>`
+              :`${mini}<div><b style="font-size:18px">Reproduis le ${model.nom.toLowerCase()} ${model.emoji}</b><br>
+                 <span style="color:var(--ink-soft);font-weight:800">${s.ok} / ${s.tot} blocs bien placés</span></div>`}
+          </div>
+        </div>
+        <div class="build-grid" style="--ar:${w}/${h};grid-template-columns:repeat(${w},1fr)">
+          ${grid.map((c,i)=>{
+            let cls='bcell',bg='';
+            if(c!=='.'){cls+=' block';bg=BLOCK[c];}
+            else if(!libre&&target[i]!=='.'){cls+=' ghost';bg=BLOCK[target[i]];}
+            return `<div class="${cls}" data-i="${i}" style="background:${bg||'rgba(255,255,255,.06)'}"></div>`;
+          }).join('')}
+        </div>
+        ${paletteHTML()}
+        <button class="btn-primary btn-ghost" onclick="buildSetup('${modelKey}')">🗑️ Tout effacer</button>
+        <div class="feedback" id="bfb">${s.win?'🏆 Bravo, modèle terminé&nbsp;!':''}</div>
+      </div>
+    </div>`;
+    app.querySelectorAll('.bcell').forEach(el=>{
+      el.onclick=()=>{
+        const i=+el.dataset.i;
+        if(eraser){ grid[i]='.'; }
+        else { grid[i]= grid[i]===sel ? '.' : sel; }
+        sndPlace();
+        const s2=stats();
+        if(s2.win){ addStar(3); sndWin(); confetti(64); }
+        render();
+      };
+    });
+  }
+  // handlers globaux (fermeture)
+  window.__bpick=(c)=>{ sel=c; eraser=false; render(); };
+  window.__berase=()=>{ eraser=!eraser; render(); };
+  render();
 }
+
+/* =====================================================================
+   🔍 CHASSE AUX OBJETS  (Maison / Magasin / Extérieur / Mixte)
+   ===================================================================== */
+const HUNT={
+  maison:{petit:[['🪑','une chaise'],['🚪','une porte'],['📚','un livre'],['🧸','un doudou'],['🛏️','un lit'],['🪟','une fenêtre'],['🥄','une cuillère'],['💡','une lampe'],['🧦','une chaussette'],['🍽️','une assiette']],
+    moyen:[['📺','une télé'],['🖼️','un cadre'],['🕰️','une horloge'],['🪞','un miroir'],['🪴','une plante'],['🧹','un balai'],['🔌','une prise'],['🗝️','une clé'],['🧊','un glaçon'],['🪥','une brosse à dents'],['🧺','un panier'],['🕯️','une bougie']],
+    grand:[['🧭','une boussole'],['📐','un objet triangulaire'],['🧯','un extincteur'],['📎','un trombone'],['🔋','une pile'],['🪛','un tournevis'],['🧵','du fil'],['📕','un objet rouge'],['🪝','un crochet'],['🔬','un objet en verre'],['🧮','un objet qui compte'],['🪫','un objet électronique']]},
+  magasin:{petit:[['🛒','un caddie'],['🍎','une pomme'],['🍌','une banane'],['🥖','un pain'],['🧀','un fromage'],['🧸','un jouet'],['🍬','un bonbon'],['🥛','du lait'],['🎈','un ballon'],['🍪','un biscuit']],
+    moyen:[['🛒','un chariot'],['🧾','un ticket de caisse'],['🏷️','une étiquette de prix'],['🥕','un légume'],['🧊','un rayon frais'],['🧴','un flacon'],['📦','un carton'],['⚖️','une balance'],['🚪','une porte automatique'],['🛍️','un sac'],['🥫','une conserve'],['🧺','un panier']],
+    grand:[['📷','une caméra de surveillance'],['🚪','un panneau « Sortie »'],['🧯','un extincteur'],['🔢','un code-barres'],['🛗','un ascenseur ou escalator'],['🅿️','un panneau parking'],['🏧','un distributeur'],['🧑‍🍳','un rayon boulangerie'],['♻️','un logo recyclage'],['💳','un terminal de paiement'],['📢','une promo affichée'],['🛒','un chariot abandonné']]},
+  exterieur:{petit:[['🌳','un arbre'],['🚗','une voiture'],['🐦','un oiseau'],['☁️','un nuage'],['🌸','une fleur'],['🐶','un chien'],['🏠','une maison'],['🍃','une feuille'],['⚽','un ballon'],['🚲','un vélo']],
+    moyen:[['🚌','un bus'],['🚐','une caravane'],['🐝','un insecte'],['🚦','un feu tricolore'],['🪧','un panneau'],['🐈','un chat'],['🌉','un pont'],['🏪','un magasin'],['🛴','une trottinette'],['🦆','un canard'],['⛲','une fontaine'],['🚧','un chantier']],
+    grand:[['🚚','un camion'],['🏛️','un bâtiment ancien'],['🚁','quelque chose qui vole'],['🛑','un panneau STOP'],['🚒','un véhicule de secours'],['🌾','un champ'],['🗿','une statue'],['🚏','un arrêt de bus'],['🏭','une cheminée'],['🚉','une gare ou une voie'],['🪟','un vitrail ou une verrière'],['🧗','un mur d\'escalade']]},
+};
+function gameChasse(){ state.game='chasse'; chasseSetup('maison'); }
 function chasseSetup(lieu){
   const t=tier(state.age);
-  const build=(z)=>HUNT[z][t];
+  const zones={maison:'maison',magasin:'magasin',exterieur:'exterieur'};
   let pool;
-  if(lieu==='interieur') pool=build('interieur');
-  else if(lieu==='exterieur') pool=build('exterieur');
-  else pool=[...build('interieur'),...build('exterieur')];
-  const n = state.age<=5?5 : state.age<=8?7 : 9;
+  if(lieu==='mixte') pool=[...HUNT.maison[t],...HUNT.magasin[t],...HUNT.exterieur[t]];
+  else pool=HUNT[zones[lieu]][t];
+  const n=state.age<=5?5:state.age<=8?7:9;
   const items=sample(pool,Math.min(n,pool.length)).map(([e,label])=>({e,label,found:false}));
+  const lieux=[['maison','🏠 Maison'],['magasin','🏪 Magasin'],['exterieur','🌳 Extérieur'],['mixte','🔀 Mixte']];
 
   function render(){
     const found=items.filter(i=>i.found).length;
@@ -546,32 +562,25 @@ function chasseSetup(lieu){
       ${bar('🔍 Chasse')}
       <h2 class="q">Trouve-les autour de toi&nbsp;! 👀</h2>
       <div class="row" style="margin-bottom:12px">
-        <button class="chip ${lieu==='interieur'?'active':''}" onclick="chasseSetup('interieur')">🏠 Intérieur</button>
-        <button class="chip ${lieu==='exterieur'?'active':''}" onclick="chasseSetup('exterieur')">🌳 Extérieur</button>
-        <button class="chip ${lieu==='mixte'?'active':''}" onclick="chasseSetup('mixte')">🔀 Mixte</button>
+        ${lieux.map(([k,lab])=>`<button class="chip ${lieu===k?'active':''}" onclick="chasseSetup('${k}')">${lab}</button>`).join('')}
       </div>
       <div class="progress"><span style="width:${(found/items.length)*100}%"></span></div>
       <p class="subtitle" style="margin-bottom:12px">${found} / ${items.length} trouvés</p>
       <div class="grid" style="grid-template-columns:1fr">
-        ${items.map((it,i)=>`
-          <div class="hunt-item ${it.found?'found':''}" data-i="${i}">
-            <span class="he">${it.e}</span>
-            <span class="hn">J'ai vu ${it.label} !</span>
-            <span class="check">✓</span>
-          </div>`).join('')}
+        ${items.map((it,i)=>`<div class="hunt-item ${it.found?'found':''}" data-i="${i}">
+          <span class="he">${it.e}</span><span class="hn">J'ai vu ${it.label} !</span><span class="check">✓</span>
+        </div>`).join('')}
       </div>
       ${done?`<div class="feedback">🏆 Bravo, tout trouvé&nbsp;!</div>
-        <button class="btn-primary" onclick="chasseSetup('${lieu}')">🔄 Nouvelle chasse</button>`
+        <button class="btn-primary btn-green" onclick="chasseSetup('${lieu}')">🔄 Nouvelle chasse</button>`
         :`<button class="btn-primary btn-ghost" onclick="chasseSetup('${lieu}')">🎲 Nouvelle liste</button>`}
     </div>`;
-
     app.querySelectorAll('.hunt-item').forEach(el=>{
       el.onclick=()=>{
         const it=items[+el.dataset.i];
-        if(it.found) return;
-        it.found=true; sndGood(); addStar();
-        const wasDone=items.filter(i=>i.found).length===items.length;
-        if(wasDone){ confetti(60); sndWin(); }
+        if(it.found)return;
+        it.found=true;sndGood();addStar();
+        if(items.every(i=>i.found)){confetti(64);sndWin();}
         render();
       };
     });
@@ -579,273 +588,199 @@ function chasseSetup(lieu){
   render();
 }
 
-/* ============================================================
-   JEU 4 — MEMORY (paires)
-   ============================================================ */
-const MEM_EMO=['🐶','🐱','🐰','🦊','🐼','🐸','🦁','🐷','🐵','🐧','🐢','🦋','🐝','🐳','🦉','🦄','🐙','🦕'];
+/* =====================================================================
+   🧠 MEMORY (retournement fiable, sans 3D)
+   ===================================================================== */
+const MEM_EMO=['🐶','🐱','🐰','🦊','🐼','🐸','🦁','🐷','🐵','🐧','🐢','🦋','🐝','🐳','🦉','🦄','🐙','🦖'];
 function gameMemory(){
   state.game='memory';
-  const pairs = state.age<=5?4 : state.age<=8?6 : 8;
+  const pairs=state.age<=5?4:state.age<=8?6:8;
   const chosen=sample(MEM_EMO,pairs);
-  const deck=shuffle([...chosen,...chosen].map((e,i)=>({e,id:i,flip:false,matched:false})));
-  let open=[], lock=false, matched=0, moves=0;
-
-  const cols = pairs<=4?4 : pairs<=6?4 : 4;
-
+  const deck=shuffle([...chosen,...chosen].map((e,i)=>({e,id:i,up:false,matched:false})));
+  let open=[],lock=false,matched=0,moves=0;
+  const cols=4;
   function render(){
     app.innerHTML=`<div class="screen">
       ${bar('🧠 Memory')}
       <h2 class="q">Retrouve les paires 🃏</h2>
       <p class="subtitle" style="margin-bottom:12px">Coups : ${moves}</p>
       <div class="mem-grid" style="grid-template-columns:repeat(${cols},1fr)">
-        ${deck.map((c,i)=>`
-          <div class="mem-card ${c.flip||c.matched?'flip':''} ${c.matched?'matched':''}" data-i="${i}">
-            <div class="face back">❓</div>
-            <div class="face front">${c.e}</div>
-          </div>`).join('')}
+        ${deck.map((c,i)=>`<div class="mem-card ${c.up||c.matched?'up':''} ${c.matched?'matched':''}" data-i="${i}">${(c.up||c.matched)?c.e:'❓'}</div>`).join('')}
       </div>
       <div class="feedback" id="fb"></div>
     </div>`;
-
     app.querySelectorAll('.mem-card').forEach(el=>{
       el.onclick=()=>{
-        if(lock) return;
+        if(lock)return;
         const c=deck[+el.dataset.i];
-        if(c.flip||c.matched) return;
-        c.flip=true; sndClick(); open.push(c);
-        el.classList.add('flip');
+        if(c.up||c.matched)return;
+        c.up=true;sndClick();open.push(c);render();
         if(open.length===2){
-          lock=true; moves++;
+          lock=true;moves++;
           if(open[0].e===open[1].e){
-            setTimeout(()=>{
-              open.forEach(o=>o.matched=true); matched++;
-              open=[]; lock=false; sndGood(); addStar();
-              if(matched===pairs){ confetti(60); sndWin(); }
-              render();
-            },500);
+            setTimeout(()=>{open.forEach(o=>o.matched=true);matched++;open=[];lock=false;
+              sndGood();addStar();if(matched===pairs){confetti(64);sndWin();}render();},480);
           }else{
             sndBad();
-            setTimeout(()=>{ open.forEach(o=>o.flip=false); open=[]; lock=false; render(); },900);
+            setTimeout(()=>{open.forEach(o=>o.up=false);open=[];lock=false;render();},850);
           }
         }
       };
     });
     if(matched===pairs){
       document.getElementById('fb').innerHTML=`🏆 Gagné en ${moves} coups&nbsp;!
-        <div><button class="btn-primary" onclick="gameMemory()">🔄 Rejouer</button></div>`;
+        <button class="btn-primary btn-green" onclick="gameMemory()">🔄 Rejouer</button>`;
     }
   }
   render();
 }
 
-/* ============================================================
-   JEU 5 — COULEURS & FORMES (3-8)
-   ============================================================ */
-const COULEURS=[['Rouge','#EE5253'],['Bleu','#45AAF2'],['Vert','#20BF6B'],['Jaune','#FFD32A'],
-  ['Orange','#FF9F43'],['Violet','#8854d0'],['Rose','#FF6B9D'],['Marron','#8B5A2B']];
+/* =====================================================================
+   Générateurs de questions (partagés)
+   ===================================================================== */
+const MOTS=[{mot:'CHAT',emo:'🐱'},{mot:'CHIEN',emo:'🐶'},{mot:'SOLEIL',emo:'☀️'},{mot:'LUNE',emo:'🌙'},
+  {mot:'FLEUR',emo:'🌸'},{mot:'POMME',emo:'🍎'},{mot:'MAISON',emo:'🏠'},{mot:'VOITURE',emo:'🚗'},
+  {mot:'BALLON',emo:'🎈'},{mot:'POISSON',emo:'🐟'},{mot:'ARBRE',emo:'🌳'},{mot:'ETOILE',emo:'⭐'},
+  {mot:'GATEAU',emo:'🍰'},{mot:'CANARD',emo:'🦆'},{mot:'BANANE',emo:'🍌'},{mot:'ROBOT',emo:'🤖'},
+  {mot:'PAPILLON',emo:'🦋'},{mot:'ELEPHANT',emo:'🐘'},{mot:'FRAISE',emo:'🍓'},{mot:'GRENOUILLE',emo:'🐸'}];
+const ORTHO=[{bon:"aujourd'hui",faux:['aujourdhui','ojourdui']},{bon:'beaucoup',faux:['beaucou','baucoup']},
+  {bon:'toujours',faux:['toujour','toujourd']},{bon:'éléphant',faux:['élépant','élephan']},
+  {bon:'anniversaire',faux:['aniversaire','annivairsaire']},{bon:'parce que',faux:['parceque','par ce que']},
+  {bon:'longtemps',faux:['lontemps','longtemp']},{bon:'quelquefois',faux:['quelque fois','quelkefois']},
+  {bon:'nourriture',faux:['nouriture','nouritture']},{bon:'dictionnaire',faux:['dictionaire','dixionnaire']}];
+const COULEURS=[['Rouge','#FF5E5B'],['Bleu','#3FC0F0'],['Vert','#22C3AE'],['Jaune','#FFCA3A'],
+  ['Orange','#FF9F1C'],['Violet','#8A4FEC'],['Rose','#FF4D9D'],['Marron','#B5651D']];
 const FORMES=[['Rond','●'],['Carré','■'],['Triangle','▲'],['Étoile','★'],['Cœur','♥'],['Losange','◆']];
-function gameFormes(){
-  state.game='formes';
-  quizRound({
-    title:'🎨 Couleurs & Formes',
-    makeQuestion(){
-      if(Math.random()<0.5){
-        // couleur
-        const c=pick(COULEURS);
-        let opts=new Set([c[0]]);
-        while(opts.size<3) opts.add(pick(COULEURS)[0]);
-        return {instruction:'Quelle est cette couleur ?',
-          promptHTML:`<div class="prompt-box"><div style="width:120px;height:120px;border-radius:24px;margin:6px auto;background:${c[1]};box-shadow:var(--ombre)"></div></div>`,
-          cols:'cols-3',
-          options:shuffle([...opts]).map(v=>({label:v,ok:v===c[0]}))};
-      }else{
-        // forme
-        const f=pick(FORMES);
-        let opts=new Set([f[0]]);
-        while(opts.size<3) opts.add(pick(FORMES)[0]);
-        return {instruction:'Quelle est cette forme ?',
-          promptHTML:`<div class="prompt-box"><div style="font-size:110px;line-height:1;color:var(--violet)">${f[1]}</div></div>`,
-          cols:'cols-3',
-          options:shuffle([...opts]).map(v=>({label:v,ok:v===f[0]}))};
-      }
-    }
-  });
-}
-
-/* ============================================================
-   JEU 6 — TROUVE L'INTRUS
-   ============================================================ */
 const INTRUS_SETS=[
-  {theme:'animaux',good:['🐶','🐱','🐰','🦊','🐼','🐸','🦁','🐷'],bad:['🍎','🚗','⚽','🌸','🏠','🎈']},
-  {theme:'fruits',good:['🍎','🍌','🍓','🍇','🍊','🍉','🍑','🍍'],bad:['🐶','🚗','⭐','🪑','🧦']},
-  {theme:'véhicules',good:['🚗','🚌','🚲','✈️','🚂','🚁','🛴','🚜'],bad:['🐱','🍎','🌳','🎈','🖍️']},
-  {theme:'nature',good:['🌳','🌸','🍃','🌻','🌴','🍄','🌵','🌷'],bad:['📱','🚗','🤖','⌚','🎮']},
-];
-function gameIntrus(){
-  state.game='intrus';
-  const cols = state.age<=6?2:4;
-  const count = state.age<=6?4:6;
-  quizRound({
-    title:"🕵️ Trouve l'Intrus",
-    makeQuestion(){
-      const s=pick(INTRUS_SETS);
-      const goods=sample(s.good,count-1);
-      const bad=pick(s.bad);
-      const all=shuffle([...goods.map(e=>({label:e,ok:false})),{label:bad,ok:true}]);
-      return {instruction:'Clique sur l\'intrus 👀',
-        promptHTML:`<p class="subtitle" style="color:#fff">Un objet n'est pas comme les autres…</p>`,
-        cols: cols===4?'cols-3':'cols-2',
-        options:all,
-        wrongMsg:'L\'intrus était en vert 😉'};
-    }
-  });
-}
-
-/* ============================================================
-   JEU 7 — QUIZ DÉCOUVERTE (6-12)
-   ============================================================ */
+  {good:['🐶','🐱','🐰','🦊','🐼','🐸','🦁','🐷'],bad:['🍎','🚗','⚽','🌸','🏠','🎈']},
+  {good:['🍎','🍌','🍓','🍇','🍊','🍉','🍑','🍍'],bad:['🐶','🚗','⭐','🪑','🧦']},
+  {good:['🚗','🚌','🚲','✈️','🚂','🚁','🛴','🚜'],bad:['🐱','🍎','🌳','🎈','🖍️']},
+  {good:['🌳','🌸','🍃','🌻','🌴','🍄','🌵','🌷'],bad:['📱','🚗','🤖','⌚','🎮']}];
 const QUIZ=[
-  // min age, q, bonnes, mauvaises
   {min:6,q:'Combien de pattes a une araignée ?',a:'8',b:['6','4','10']},
   {min:6,q:'Quel animal fait « meuh » ?',a:'La vache 🐄',b:['Le mouton 🐑','Le cheval 🐴','La chèvre 🐐']},
-  {min:6,q:'Quelle est la couleur du ciel par beau temps ?',a:'Bleu 💙',b:['Vert 💚','Rouge ❤️','Marron 🤎']},
-  {min:6,q:'Où vivent les poissons ?',a:'Dans l\'eau 🌊',b:['Dans les arbres 🌳','Dans le sable 🏜️','Dans le ciel ☁️']},
-  {min:6,q:'Combien y a-t-il de jours dans une semaine ?',a:'7',b:['5','10','12']},
+  {min:6,q:'Couleur du ciel par beau temps ?',a:'Bleu 💙',b:['Vert 💚','Rouge ❤️','Marron 🤎']},
+  {min:6,q:'Où vivent les poissons ?',a:"Dans l'eau 🌊",b:['Dans les arbres 🌳','Dans le sable 🏜️','Dans le ciel ☁️']},
+  {min:6,q:'Combien de jours dans une semaine ?',a:'7',b:['5','10','12']},
   {min:7,q:'Quelle planète habitons-nous ?',a:'La Terre 🌍',b:['Mars 🔴','La Lune 🌙','Le Soleil ☀️']},
   {min:7,q:'Que mange le panda ?',a:'Du bambou 🎋',b:['De la viande 🥩','Du poisson 🐟','Des fleurs 🌸']},
-  {min:7,q:'Combien de couleurs dans un arc-en-ciel ?',a:'7',b:['3','5','10']},
-  {min:8,q:'Quel est le plus grand animal du monde ?',a:'La baleine bleue 🐋',b:['L\'éléphant 🐘','La girafe 🦒','Le requin 🦈']},
-  {min:8,q:'Quelle est la capitale de la France ?',a:'Paris 🗼',b:['Lyon','Marseille','Nice']},
+  {min:7,q:"Combien de couleurs dans un arc-en-ciel ?",a:'7',b:['3','5','10']},
+  {min:8,q:'Le plus grand animal du monde ?',a:'La baleine bleue 🐋',b:["L'éléphant 🐘",'La girafe 🦒','Le requin 🦈']},
+  {min:8,q:'Capitale de la France ?',a:'Paris 🗼',b:['Lyon','Marseille','Nice']},
   {min:8,q:'Que produit une abeille ?',a:'Du miel 🍯',b:['Du lait 🥛','Du sucre','De la cire seulement']},
-  {min:9,q:'Combien de continents y a-t-il ?',a:'7',b:['5','6','8']},
-  {min:9,q:'Quel gaz respirons-nous pour vivre ?',a:'L\'oxygène',b:['Le dioxyde de carbone','L\'hélium','L\'azote']},
-  {min:9,q:'Quel est l\'astre au centre de notre système solaire ?',a:'Le Soleil ☀️',b:['La Terre','La Lune','Jupiter']},
+  {min:9,q:'Combien de continents ?',a:'7',b:['5','6','8']},
+  {min:9,q:'Quel gaz respirons-nous pour vivre ?',a:"L'oxygène",b:['Le dioxyde de carbone','L\'hélium','L\'azote']},
   {min:10,q:'Combien de côtés a un hexagone ?',a:'6',b:['5','7','8']},
-  {min:10,q:'Quel océan est le plus grand ?',a:'Le Pacifique',b:['L\'Atlantique','L\'Indien','L\'Arctique']},
+  {min:10,q:'Quel océan est le plus grand ?',a:'Le Pacifique',b:["L'Atlantique","L'Indien","L'Arctique"]},
   {min:10,q:'Qui a peint la Joconde ?',a:'Léonard de Vinci',b:['Picasso','Van Gogh','Monet']},
-  {min:11,q:'Quelle est la vitesse de la lumière (environ) ?',a:'300 000 km/s',b:['300 km/h','1 000 km/s','3 000 km/s']},
-  {min:11,q:'Quel est le plus long fleuve du monde ?',a:'Le Nil (ou l\'Amazone)',b:['La Seine','Le Rhône','La Loire']},
-  {min:12,q:'Combien de planètes dans le système solaire ?',a:'8',b:['7','9','10']},
-];
-function gameQuiz(){
-  state.game='quiz';
-  const bank=QUIZ.filter(x=>x.min<=state.age);
-  const used=new Set();
-  quizRound({
-    title:'🌍 Quiz',
-    makeQuestion(){
-      let x, guard=0;
-      do{ x=pick(bank); guard++; }while(used.has(x.q)&&used.size<bank.length&&guard<30);
-      used.add(x.q);
-      const opts=[{label:x.a,ok:true},...x.b.map(v=>({label:v,ok:false}))];
-      return {instruction:x.q,
-        cols: (x.a.length>10||x.b.some(v=>v.length>10))?'cols-1':'cols-2',
-        small:true,
-        options:opts,
-        wrongMsg:'La bonne réponse est en vert 💡'};
-    }
-  });
-}
+  {min:11,q:'Vitesse de la lumière (environ) ?',a:'300 000 km/s',b:['300 km/h','1 000 km/s','3 000 km/s']},
+  {min:12,q:'Combien de planètes dans le système solaire ?',a:'8',b:['7','9','10']}];
 
-/* ============================================================
-   JEU 8 — CAHIER DE VACANCES (mélange de tous les défis)
-   Reprend l'esprit des cahiers d'activités : une page = plusieurs
-   types d'exercices qui s'enchaînent.
-   ============================================================ */
-function gameCahier(){
-  state.game='cahier';
-  const t=tier(state.age);
-  // On réutilise les générateurs des autres jeux (calcul, mots, formes, intrus, quiz)
-  quizRound({
-    title:'📒 Cahier de Vacances',
-    total:8,
-    makeQuestion(){
-      const kinds = t==='petit'
-        ? ['calc','mot','forme','intrus']
-        : t==='moyen'
-        ? ['calc','mot','intrus','quiz']
-        : ['calc','mot','intrus','quiz'];
-      const k=pick(kinds);
-      if(k==='calc') return calculQuestion(t);
-      if(k==='mot')  return motQuestion(t);
-      if(k==='forme')return formeQuestion();
-      if(k==='intrus')return intrusQuestion(state.age);
-      return quizQuestion(state.age);
-    }
-  });
-}
-
-/* --- générateurs extraits pour réutilisation dans le Cahier --- */
-function calculQuestion(t){
+function calculQuestion(t,age){
+  age=age||state.age;
   if(t==='petit'){
-    const emo=pick(['🍎','🐶','⭐','🎈','🚗']); const n=randInt(1,6);
-    let opts=new Set([n]); while(opts.size<3) opts.add(randInt(1,8));
+    const emo=pick(['🍎','🐶','⭐','🎈','🚗','🌸']);const n=randInt(1,age<=4?5:10);
+    let o=new Set([n]);while(o.size<3)o.add(randInt(1,10));
     return {instruction:'Compte les objets 🔢',
-      promptHTML:`<div class="prompt-box"><div style="font-size:36px">${emo.repeat(n)}</div></div>`,
-      cols:'cols-3',options:[...opts].map(v=>({label:v,ok:v===n}))};
+      promptHTML:`<div class="prompt-box"><div style="font-size:36px;line-height:1.3">${emo.repeat(n)}</div></div>`,
+      cols:'cols-3',options:[...o].map(v=>({label:v,ok:v===n}))};
   }
   if(t==='moyen'){
-    const a=randInt(1,15),b=randInt(1,10),good=a+b;
-    let opts=new Set([good]); while(opts.size<4) opts.add(Math.max(0,good+randInt(-3,3)));
+    const add=Math.random()<0.6;let a,b,good,sym;
+    if(add){a=randInt(1,age<=6?10:20);b=randInt(1,age<=6?10:20);good=a+b;sym='+';}
+    else{a=randInt(2,20);b=randInt(1,a);good=a-b;sym='−';}
+    let o=new Set([good]);while(o.size<4)o.add(Math.max(0,good+randInt(-4,4)));
     return {instruction:'Combien font…',
-      promptHTML:`<div class="prompt-box"><span class="txt">${a} + ${b} = ?</span></div>`,
-      options:[...opts].map(v=>({label:v,ok:v===good}))};
+      promptHTML:`<div class="prompt-box"><span class="txt">${a} ${sym} ${b} = ?</span></div>`,
+      options:[...o].map(v=>({label:v,ok:v===good}))};
   }
-  const a=randInt(2,10),b=randInt(2,10),good=a*b;
-  let opts=new Set([good]); while(opts.size<4) opts.add(good+randInt(-8,8));
-  return {instruction:'Multiplication ✖️',
-    promptHTML:`<div class="prompt-box"><span class="txt">${a} × ${b} = ?</span></div>`,
-    options:[...opts].filter(v=>v>0).slice(0,4).map(v=>({label:v,ok:v===good}))};
+  const type=pick(['x','x','÷','pb']);
+  if(type==='x'){const a=randInt(2,10),b=randInt(2,10),good=a*b;
+    let o=new Set([good]);while(o.size<4)o.add(good+randInt(-9,9));
+    return {instruction:'Multiplication ✖️',
+      promptHTML:`<div class="prompt-box"><span class="txt">${a} × ${b} = ?</span></div>`,
+      options:[...o].filter(v=>v>0).slice(0,4).map(v=>({label:v,ok:v===good}))};}
+  if(type==='÷'){const b=randInt(2,9),good=randInt(2,10),a=b*good;
+    let o=new Set([good]);while(o.size<4)o.add(Math.max(1,good+randInt(-3,3)));
+    return {instruction:'Division ➗',
+      promptHTML:`<div class="prompt-box"><span class="txt">${a} ÷ ${b} = ?</span></div>`,
+      options:[...o].map(v=>({label:v,ok:v===good}))};}
+  const prix=randInt(2,9),qte=randInt(2,6),good=prix*qte;
+  let o=new Set([good]);while(o.size<4)o.add(good+randInt(-8,8));
+  return {instruction:'Petit problème 🧩',
+    promptHTML:`<div class="prompt-box" style="font-size:19px;font-weight:800;padding:20px">Un jouet coûte ${prix} €.<br>Combien coûtent ${qte} jouets ?</div>`,
+    options:[...o].filter(v=>v>0).slice(0,4).map(v=>({label:v+' €',ok:v===good}))};
 }
 function motQuestion(t){
   if(t==='petit'){
-    const w=pick(MOTS); const good=w.mot[0];
-    let letters=new Set([good]); const alpha='ABCDEFGHIJKLMNOPRSTU';
-    while(letters.size<3) letters.add(alpha[rand(alpha.length)]);
-    return {instruction:'Première lettre du mot ?',
-      promptHTML:`<div class="prompt-box"><div class="big-emoji" style="margin:0">${w.emo}</div><div style="font-weight:800">${w.mot.toLowerCase()}</div></div>`,
-      cols:'cols-3',options:[...letters].map(l=>({label:l,ok:l===good}))};
+    const w=pick(MOTS),good=w.mot[0];let L=new Set([good]);const al='ABCDEFGHIJKLMNOPRSTU';
+    while(L.size<3)L.add(al[rand(al.length)]);
+    return {instruction:'Par quelle lettre commence ce mot ?',
+      promptHTML:`<div class="prompt-box"><div class="big-emoji" style="margin:0">${w.emo}</div><div style="font-weight:900;font-size:20px">${w.mot.toLowerCase()}</div></div>`,
+      cols:'cols-3',options:[...L].map(l=>({label:l,ok:l===good}))};
   }
   if(t==='moyen'){
-    const w=pick(MOTS); const i=randInt(1,w.mot.length-1); const good=w.mot[i];
+    const w=pick(MOTS),i=randInt(1,w.mot.length-1),good=w.mot[i];
     const shown=w.mot.split('').map((c,k)=>k===i?'_':c).join('');
-    let letters=new Set([good]); const alpha='ABCDEFGHILMNOPRSTUV';
-    while(letters.size<4) letters.add(alpha[rand(alpha.length)]);
+    let L=new Set([good]);const al='ABCDEFGHILMNOPRSTUV';while(L.size<4)L.add(al[rand(al.length)]);
     return {instruction:'Quelle lettre manque ?',
-      promptHTML:`<div class="prompt-box"><div style="font-size:38px">${w.emo}</div><span class="txt">${shown}</span></div>`,
-      cols:'cols-4',options:[...letters].map(l=>({label:l,ok:l===good}))};
+      promptHTML:`<div class="prompt-box"><div style="font-size:40px;margin-bottom:6px">${w.emo}</div><span class="txt">${shown}</span></div>`,
+      cols:'cols-4',options:[...L].map(l=>({label:l,ok:l===good}))};
   }
-  const o=pick(ORTHO);
-  return {instruction:'Quel mot est bien écrit ?',cols:'cols-1',
-    options:[{label:o.bon,ok:true},...o.faux.map(f=>({label:f,ok:false}))].slice(0,3),
-    wrongMsg:'La bonne orthographe est en vert 👀'};
+  const ortho=pick(ORTHO);
+  return {instruction:'Quel mot est bien orthographié ?',cols:'cols-1',small:true,
+    options:[{label:ortho.bon,ok:true},...ortho.faux.map(f=>({label:f,ok:false}))].slice(0,3),
+    wrongMsg:"La bonne orthographe est en vert 👀"};
 }
 function formeQuestion(){
-  const f=pick(FORMES); let opts=new Set([f[0]]);
-  while(opts.size<3) opts.add(pick(FORMES)[0]);
+  if(Math.random()<0.5){
+    const c=pick(COULEURS);let o=new Set([c[0]]);while(o.size<3)o.add(pick(COULEURS)[0]);
+    return {instruction:'Quelle est cette couleur ?',
+      promptHTML:`<div class="prompt-box"><div style="width:120px;height:120px;border-radius:22px;margin:4px auto;background:${c[1]};border:var(--border)"></div></div>`,
+      cols:'cols-3',options:shuffle([...o]).map(v=>({label:v,ok:v===c[0]}))};
+  }
+  const f=pick(FORMES);let o=new Set([f[0]]);while(o.size<3)o.add(pick(FORMES)[0]);
   return {instruction:'Quelle est cette forme ?',
-    promptHTML:`<div class="prompt-box"><div style="font-size:100px;color:var(--violet)">${f[1]}</div></div>`,
-    cols:'cols-3',options:shuffle([...opts]).map(v=>({label:v,ok:v===f[0]}))};
+    promptHTML:`<div class="prompt-box"><div style="font-size:110px;line-height:1;color:var(--p)">${f[1]}</div></div>`,
+    cols:'cols-3',options:shuffle([...o]).map(v=>({label:v,ok:v===f[0]}))};
 }
 function intrusQuestion(age){
-  const count=age<=6?4:6;
-  const s=pick(INTRUS_SETS);
-  const goods=sample(s.good,count-1); const bad=pick(s.bad);
+  const count=age<=6?4:6;const s=pick(INTRUS_SETS);
+  const goods=sample(s.good,count-1),bad=pick(s.bad);
   const all=shuffle([...goods.map(e=>({label:e,ok:false})),{label:bad,ok:true}]);
-  return {instruction:'Clique sur l\'intrus 👀',
-    cols: count===4?'cols-2':'cols-3',options:all,
-    wrongMsg:'L\'intrus était en vert 😉'};
+  return {instruction:"Clique sur l'intrus 👀",
+    promptHTML:`<p class="subtitle">Un élément n'est pas comme les autres…</p>`,
+    cols:count===4?'cols-2':'cols-3',options:all,wrongMsg:"L'intrus était en vert 😉"};
 }
 function quizQuestion(age){
-  const bank=QUIZ.filter(x=>x.min<=age); const x=pick(bank);
-  return {instruction:x.q, small:true,
+  const bank=QUIZ.filter(x=>x.min<=age),x=pick(bank);
+  return {instruction:x.q,small:true,
     cols:(x.a.length>10||x.b.some(v=>v.length>10))?'cols-1':'cols-2',
     options:[{label:x.a,ok:true},...x.b.map(v=>({label:v,ok:false}))],
     wrongMsg:'La bonne réponse est en vert 💡'};
 }
 
+/* ---- Jeux basés sur le moteur QCM ---- */
+function gameCalcul(){state.game='calcul';const t=tier(state.age);quizRound({title:'🔢 Calcul',makeQuestion:()=>calculQuestion(t)});}
+function gameMots(){state.game='mots';const t=tier(state.age);quizRound({title:'🔤 Les Mots',makeQuestion:()=>motQuestion(t)});}
+function gameFormes(){state.game='formes';quizRound({title:'🎨 Couleurs & Formes',makeQuestion:()=>formeQuestion()});}
+function gameIntrus(){state.game='intrus';quizRound({title:"🕵️ Trouve l'Intrus",makeQuestion:()=>intrusQuestion(state.age)});}
+function gameQuiz(){state.game='quiz';quizRound({title:'🌍 Quiz',makeQuestion:()=>quizQuestion(state.age)});}
+function gameCahier(){
+  state.game='cahier';const t=tier(state.age);
+  quizRound({title:'📒 Cahier de Vacances',total:8,makeQuestion(){
+    const kinds=t==='petit'?['calc','mot','forme','intrus']:['calc','mot','intrus','quiz'];
+    const k=pick(kinds);
+    if(k==='calc')return calculQuestion(t);
+    if(k==='mot')return motQuestion(t);
+    if(k==='forme')return formeQuestion();
+    if(k==='intrus')return intrusQuestion(state.age);
+    return quizQuestion(state.age);
+  }});
+}
+
 /* ---------- démarrage ---------- */
-goHome();
+welcome();
 </script>
 </body>
 </html>
