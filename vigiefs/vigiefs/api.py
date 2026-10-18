@@ -886,13 +886,16 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
         return row
 
     @app.get("/api/jobs")
-    def list_jobs(share_id: Optional[int] = None, type: Optional[str] = None, status: Optional[str] = None,
-                  limit: int = Query(100, le=500), user=Depends(viewer)):
+    def list_jobs(share_id: Optional[int] = None, client_id: Optional[int] = None, type: Optional[str] = None,
+                  status: Optional[str] = None, no_share: bool = False, limit: int = Query(100, le=500),
+                  user=Depends(viewer)):
         sql = ("SELECT j.id, j.type, j.title, j.share_id, j.client_id, j.status, j.params, j.progress, j.error, "
                "j.actor, j.created_at, j.started_at, j.finished_at, s.name AS share_name, c.name AS client_name "
                "FROM jobs j LEFT JOIN shares s ON s.id=j.share_id LEFT JOIN clients c ON c.id=j.client_id WHERE 1=1")
         params = []
-        for col, val in (("j.share_id", share_id), ("j.type", type)):
+        if no_share:
+            sql += " AND j.share_id IS NULL"
+        for col, val in (("j.share_id", share_id), ("j.client_id", client_id), ("j.type", type)):
             if val:
                 sql += f" AND {col}=?"
                 params.append(val)

@@ -9,24 +9,53 @@ société d'infogérance. Elle complète Datto (sauvegarde / RMM) sans le rempla
 
 ## Fonctionnalités
 
+### Supervision
 | Domaine | Ce que fait VigieFS |
 |---|---|
-| **Multi-clients** | Clients → dossiers supervisés (chemins locaux `D:\…` ou UNC `\\SRV\partage`). Vue consolidée et par client. |
-| **Quotas** | Quota logiciel par dossier, seuils d'avertissement / critique, jauges, alertes, **prévision de saturation** (tendance sur 30 jours). |
-| **Rapports de stockage** | Volume par type de fichier, par sous-dossier, ancienneté, plus gros fichiers, **données inactives** (candidates à l'archivage), historique et courbe d'évolution, doublons (SHA-256). |
-| **Filtrage de fichiers** | Extensions interdites (globales ou par dossier), alerte ou **mise en quarantaine** automatique, en temps réel et lors des analyses. |
-| **Anti-rançongiciel** | Détection temps réel des extensions chiffrées connues, des notes de rançon et des **rafales de modifications** (comportement de chiffrement) → alerte critique immédiate. |
-| **Journal d'activité** | Créations, modifications, suppressions, renommages en temps réel (watchdog), filtrable, export CSV. |
-| **Disponibilité** | Dossier/partage inaccessible, espace libre du volume trop bas → alertes avec résolution automatique. |
-| **Alertes** | Dédoublonnées, escalade, acquittement (individuel / groupé), clôture, résolution automatique quand la cause disparaît. Notifications **e-mail (SMTP)** et **webhook** signé HMAC. |
-| **Explorateur** | Navigation, création de dossier, renommage, téléchargement, suppression (admin), **lecture des ACL NTFS** (icacls) ou des droits POSIX. |
-| **Sécurité** | Comptes avec rôles (lecture seule / opérateur / administrateur), mots de passe PBKDF2, verrouillage anti force brute, protection CSRF, **journal d'audit** de toutes les actions. |
-| **Intégration** | API REST documentée (`/api/docs`), clés d'API, `/api/v1/status` pour le centre de supervision, `/metrics` Prometheus, composant **Datto RMM** prêt à l'emploi. |
-| **Rapports** | Consommation par client (facturation du stockage) et historique des alertes en CSV (compatible Excel). |
+| **Multi-clients** | Clients → dossiers supervisés (chemins locaux `D:\…` ou UNC `\\SRV\partage`). Vue consolidée, recherche globale (Ctrl K). |
+| **Quotas** | Quota logiciel par dossier, seuils d'avertissement / critique, **prévision de saturation** (tendance sur 30 jours). |
+| **Anti-rançongiciel** | Détection temps réel des extensions chiffrées, des notes de rançon et des **rafales de modifications** → alerte critique immédiate. |
+| **Filtrage de fichiers** | Extensions interdites, alerte ou **quarantaine** automatique. |
+| **Journal d'activité** | Créations, modifications, suppressions, renommages en temps réel, export CSV. |
+| **Alertes** | Dédoublonnées, escalade, acquittement, résolution automatique ; e-mail (SMTP) et webhook signé HMAC. |
 
-| Rapport de stockage | Alertes | Explorateur + ACL |
+### Optimisation du stockage
+| Domaine | Ce que fait VigieFS |
+|---|---|
+| **Centre d'optimisation** | Gain potentiel par client et par dossier : fichiers inutiles + doublons + données froides. |
+| **Fichiers inutiles** | Détectés à chaque analyse : verrous Office orphelins (`~$…`), `.tmp`, téléchargements interrompus, `Thumbs.db`, `.DS_Store`, sauvegardes automatiques (`.bak`, `.wbk`, `.xlk`, `.asd`…), anciens journaux, fichiers vides, **dossiers vides**. Ancienneté minimale réglable pour ne jamais toucher un document ouvert. |
+| **Doublons** | Comparaison du **contenu** (taille → empreinte partielle → SHA-256), dans un dossier ou **sur tous les dossiers d'un client**. Choix de l'exemplaire conservé (le plus ancien, le plus récent, chemin le plus court ou manuel) ; chaque copie est **revérifiée** avant suppression. |
+| **Archivage à froid** | Règle par dossier (ancienneté, taille, extensions, exclusions, date de modification ou d'accès), **simulation** du gain, copie **vérifiée SHA-256** vers un NAS / disque d'archive en conservant les dates, **raccourci `[archivé]`** laissé à la place, restauration en un clic, planification automatique. |
+| **Corbeille VigieFS** | Tout ce que VigieFS retire (nettoyage, doublons, suppression dans l'explorateur, remplacement par une version réparée) est **restaurable** pendant la durée de rétention, puis purgé automatiquement. |
+| **Tâches** | Traitements longs en arrière-plan avec progression, annulation et historique. |
+
+### Réparation de documents
+| Domaine | Ce que fait VigieFS |
+|---|---|
+| **Diagnostic** | Word, Excel, PowerPoint (`.docx/.xlsx/.pptx` et variantes macro/modèle, anciens `.doc/.xls/.ppt`) et PDF : archive, XML, cohérence du paquet, liens internes, pages PDF. Détecte aussi les fichiers **remplis de zéros**, **chiffrés par un rançongiciel** ou **protégés par mot de passe** (non corrompus). |
+| **Réparation Office** | Reconstruction de l'archive même si l'index est détruit ou le fichier tronqué, réparation XML (caractères invalides, balises non refermées, troncature), régénération des types de contenu et des relations, correction des liens cassés (images manquantes remplacées, références orphelines retirées), suppression des parties non essentielles endommagées (miniature, `calcChain.xml`…). |
+| **Réparation PDF** | Données parasites retirées, fin de fichier restaurée, **table xref reconstruite**, **catalogue et arborescence des pages recréés** pour un PDF tronqué, pages illisibles remplacées par une page blanche (numérotation conservée). |
+| **Anciens formats** | Conversion réparatrice via LibreOffice (si installé), sinon récupération du texte. |
+| **Dernier recours** | Extraction du texte (Word/PowerPoint) ou des données (Excel) dans un nouveau document. |
+| **Contrôle d'intégrité** | Analyse d'un dossier entier, liste des documents corrompus / irrécupérables, **réparation en lot** (copie « (réparé) » ou remplacement de l'original, mis en corbeille). |
+| **Atelier** | Glisser-déposer d'un document reçu d'un client, téléchargement du fichier réparé, historique. |
+
+Principes : l'original n'est jamais écrasé sans être conservé, chaque fichier réparé est **re-diagnostiqué** avant d'être proposé, et un fichier irrécupérable est signalé comme tel avec la marche à suivre (restauration Datto).
+
+### Administration et intégration
+Explorateur avec ACL NTFS, rôles (lecture seule / opérateur / administrateur), journal d'audit, API REST documentée (`/api/docs`), clés d'API, `/api/v1/status`, `/metrics` Prometheus, composant **Datto RMM**, rapports CSV par client.
+
+| Centre d'optimisation | Nettoyage | Doublons |
 |---|---|---|
-| ![](docs/rapport.png) | ![](docs/alertes.png) | ![](docs/explorateur.png) |
+| ![](docs/optimisation.png) | ![](docs/nettoyage.png) | ![](docs/doublons.png) |
+
+| Archivage à froid (simulation) | Contrôle d'intégrité | Diagnostic et réparation |
+|---|---|---|
+| ![](docs/archivage.png) | ![](docs/integrite.png) | ![](docs/diagnostic.png) |
+
+| Atelier de réparation | Thème sombre |
+|---|---|
+| ![](docs/reparation.png) | ![](docs/theme-sombre.png) |
 
 ## Installation sur Windows Server
 
@@ -83,7 +112,10 @@ Pour un accès hors du réseau d'administration, servez VigieFS en **HTTPS**
    (Teams, Slack, PSA, centre de supervision). Bouton *Envoyer un test*.
 4. **Paramètres › Sécurité & filtrage** : seuils anti-rançongiciel, extensions bloquées,
    dossier de quarantaine (**en dehors** des dossiers supervisés).
-5. **Paramètres › Utilisateurs** : comptes des techniciens (rôle *Opérateur*) et des
+5. **Paramètres › Stockage & réparation** : dossier de la corbeille et rétention, destination
+   des **archives à froid** (NAS, disque d'archive…), anciennetés minimales des fichiers inutiles,
+   chemin de LibreOffice (optionnel, pour les anciens formats `.doc/.xls/.ppt`).
+6. **Paramètres › Utilisateurs** : comptes des techniciens (rôle *Opérateur*) et des
    personnes en consultation (*Lecture seule*).
 
 ### Rôles
@@ -91,8 +123,8 @@ Pour un accès hors du réseau d'administration, servez VigieFS en **HTTPS**
 | Rôle | Droits |
 |---|---|
 | Lecture seule | Consultation de tout (sauf paramètres), exports CSV. |
-| Opérateur | + clients, dossiers, analyses, acquittement d'alertes, création / renommage / téléchargement de fichiers. |
-| Administrateur | + suppression de fichiers et de clients, paramètres, utilisateurs, clés d'API, journal d'audit. |
+| Opérateur | + clients, dossiers, analyses, acquittement d'alertes, nettoyage, doublons, archivage et restauration, réparation, opérations sur les fichiers (suppressions vers la corbeille). |
+| Administrateur | + purge définitive de la corbeille, suppression de clients, paramètres, utilisateurs, clés d'API, journal d'audit. |
 
 ## Intégration au centre de supervision (étape 2)
 
@@ -136,6 +168,11 @@ vigiefs/
 ├── vigiefs/
 │   ├── api.py          API REST FastAPI + service de l'interface
 │   ├── engine.py       Planificateur, analyses, règles proactives, rétention
+│   ├── jobs.py         Tâches de fond persistées (progression, annulation)
+│   ├── optimize.py     Fichiers inutiles, nettoyage, doublons
+│   ├── storage.py      Corbeille VigieFS, archivage à froid
+│   ├── docrepair.py    Diagnostic et réparation Word / Excel / PowerPoint / PDF
+│   ├── integrity.py    Contrôle d'intégrité d'un dossier, atelier de réparation
 │   ├── monitor.py      Surveillance temps réel (watchdog), anti-rançongiciel
 │   ├── scanner.py      Analyse d'arborescence, doublons, quarantaine
 │   ├── alerts.py       Alertes (dédoublonnage, escalade) + e-mail / webhook
@@ -143,7 +180,7 @@ vigiefs/
 │   ├── permissions.py  ACL NTFS (icacls) / droits POSIX
 │   ├── auth.py         Comptes, sessions, clés d'API
 │   ├── db.py           SQLite (WAL)
-│   └── static/         Interface web (HTML/CSS/JS natif, aucune dépendance externe)
+│   └── static/         Interface web (HTML/CSS/JS natif en modules, aucune dépendance externe)
 ├── integrations/datto-rmm/VigieFS-Monitor.ps1
 ├── scripts/install-windows.ps1
 └── tests/
@@ -160,6 +197,13 @@ ressource n'est chargée depuis Internet.
 - La surveillance temps réel d'un partage UNC distant dépend du serveur distant
   (notifications SMB) ; les analyses planifiées restent la source de vérité.
 - Le propriétaire NTFS n'est pas affiché (seules les ACL via `icacls`).
+- La réparation de documents traite la corruption de **structure** (archive, XML, PDF). Un
+  document dont le contenu a été écrasé (zéros, chiffrement) est irrécupérable : restaurez-le
+  depuis Datto. Les documents protégés par mot de passe ne sont pas déchiffrés.
+- Sans LibreOffice, les anciens formats binaires `.doc/.xls/.ppt` endommagés ne peuvent être
+  récupérés qu'en texte brut.
+- La corbeille et les archives doivent se trouver **hors** des dossiers supervisés ; pour des
+  déplacements instantanés, placez la corbeille sur le même volume que les partages.
 
 ## Tests
 

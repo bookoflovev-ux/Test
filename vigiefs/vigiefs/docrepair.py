@@ -118,8 +118,12 @@ CT_PATTERNS = [
 IMAGE_EXT = {"png", "jpeg", "jpg", "gif", "bmp", "tif", "tiff", "emf", "wmf", "svg", "wdp", "jfif"}
 # Parties non essentielles, supprimées si endommagées (Office sait s'en passer).
 EXPENDABLE = (re.compile(r"(^|/)(calcChain\.xml|printerSettings\d*\.bin|thumbnail\.\w+)$|^customXml/|^docProps/"),)
+FORMATTING_PART = re.compile(r"(styles|stylesWithEffects|settings|webSettings|fontTable|numbering|theme\d*|"
+                             r"presProps|viewProps|tableStyles|commentAuthors)\.xml$")
 PLACEHOLDER_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+# Avertissements qpdf sans gravité (le lecteur corrige seul, le contenu est intact).
+PDF_MINOR_WARNINGS = ("Resources is missing", "MediaBox", "inheritable", "unknown key")
 INVALID_XML_CHARS = re.compile(rb"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
@@ -370,7 +374,8 @@ def _diagnose_ooxml(data, fmt, rep, quick):
                 continue
             target = _resolve_target(base, r.get("Target"))
             if target not in parts:
-                rep.issue("error", f"Lien interne cassé : « {rels_name} » → « {target} » absent.")
+                rep.issue("warning" if _is_expendable(target) else "error",
+                          f"Lien interne cassé : « {rels_name} » → « {target} » absent.")
     if fmt.startswith("xl") and "xl/calcChain.xml" in damaged:
         rep.issue("warning", "Chaîne de calcul Excel endommagée (sera reconstruite par Excel).")
     rep.data["details"]["main_part"] = main
@@ -430,8 +435,11 @@ def _diagnose_pdf(path, data, rep, quick):
             rep.data["details"]["pages"] = pages
             rep.data["details"]["version"] = pdf.pdf_version
             if warnings:
-                rep.issue("error", f"Structure endommagée ({len(warnings)} anomalie(s) corrigée(s) à la lecture) : "
-                                   f"{_short(warnings[0]).replace(path, '').strip(': ')}")
+                first = _short(str(warnings[0]).replace(path, "").lstrip(":, "))
+                minor = all(any(m in str(w) for m in PDF_MINOR_WARNINGS) for w in warnings)
+                rep.issue("warning" if minor else "error",
+                          f"{'Anomalie de structure mineure' if minor else 'Structure endommagée'} "
+                          f"({len(warnings)} anomalie(s) corrigée(s) à la lecture) : {first}")
             bad = []
             limit = pages if not quick else min(pages, 50)
             for i in range(limit):
@@ -447,7 +455,7 @@ def _diagnose_pdf(path, data, rep, quick):
     except pikepdf.PasswordError:
         rep.set(status="protected", recommendation="PDF protégé par mot de passe : il n'est pas corrompu.")
     except pikepdf.PdfError as exc:
-        rep.issue("error", f"Le PDF ne peut pas être ouvert : {_short(exc).replace(path, '').strip(': ')}.")
+        rep.issue("error", f"Le PDF ne peut pas être ouvert : {_short(str(exc).replace(path, '').lstrip(':, '))}.")
 
 
 def _read_contents(page):
@@ -621,8 +629,13 @@ def _repair_ooxml(data, fmt, out, actions):
     if broken:
         actions.append(f"{broken} lien(s) interne(s) cassé(s) corrigé(s) (images manquantes remplacées, "
                        "références orphelines retirées).")
-    if lost:
-        actions.append("Contenu irrécupérable retiré du document : " + ", ".join(sorted(set(lost))[:10]) + ".")
+    styling = sorted({t for t in lost if FORMATTING_PART.search(t)})
+    content = sorted(set(lost) - set(styling))
+    if styling:
+        actions.append("Parties de mise en forme perdues, remplacées par les réglages par défaut d'Office : "
+                       + ", ".join(posixpath.basename(t) for t in styling[:10]) + ".")
+    if content:
+        actions.append("Contenu irrécupérable retiré du document : " + ", ".join(content[:10]) + ".")
 
     # 5. Types de contenu.
     ct, ct_changed = _content_types(parts, fmt, main)
