@@ -242,6 +242,7 @@ const every = (ms, fn) => pageTimers.push(setInterval(fn, ms));
 const PAGES = [
   { id: 'dashboard', title: 'Tableau de bord', sub: 'Vue d\'ensemble de votre PC en temps réel', ico: 'dashboard', section: 'Pilotage' },
   { id: 'gaming', title: 'Mode Jeu · CS2', sub: 'Profil compétitif, Game Boost et configuration Counter-Strike 2', ico: 'game' },
+  { id: 'games', title: 'Mes jeux', sub: 'Jeux détectés et performances adaptées automatiquement à chaque jeu', ico: 'play' },
   { id: 'tweaks', title: 'Optimisations', sub: 'Réglages Windows pour les performances — tous réversibles', ico: 'zap' },
   { id: 'clean', title: 'Nettoyage', sub: 'Fichiers temporaires, caches et résidus', ico: 'broom', section: 'Entretien' },
   { id: 'files', title: 'Fichiers inutiles', sub: 'Gros fichiers, doublons, vieux téléchargements', ico: 'folder' },
@@ -449,6 +450,45 @@ R.gaming = async (v) => {
   $('#saveKill').onclick = (e) => safe(act(e.currentTarget, () => api('/api/gaming/kill-list', { method: 'PUT', body: { kill_list: $('#killList').value.split(/\n|,/) } }), 'Liste enregistrée'));
   $('#saveAuto').onclick = (e) => safe(act(e.currentTarget, () => post('/api/gaming/autoexec', { content: $('#autoexec').value }), 'autoexec.cfg enregistré'));
   $('#backupCfg').onclick = (e) => safe(act(e.currentTarget, () => post('/api/gaming/backup-config'), (r) => `Sauvegarde créée : ${r.path}`));
+};
+
+// ===== Mes jeux =====
+const fmtPlay = (s) => (s < 60 ? (s > 0 ? '< 1 min' : '0 min') : s < 3600 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(s < 36000 ? 1 : 0).replace('.', ',')} h`);
+const KIND = { competitif: ['Compétitif', 'acc'], solo: ['Solo', ''], inconnu: ['Non classé', ''] };
+
+R.games = async (v) => {
+  const d = await api('/api/games');
+  const played = d.games.filter((g) => g.playtime >= 60);
+  const total = d.games.reduce((a, g) => a + g.playtime, 0);
+  const running = d.games.filter((g) => g.running);
+  v.innerHTML = `<div class="stack">
+    <div class="grid g3">
+      <div class="card glow span2"><div class="card-head"><div class="card-icon">${icon('zap')}</div><h3>Adaptation automatique des performances
+        <span class="sub">Dès qu'un jeu se lance, Overdrive applique son profil (priorité, GPU dédié, RAM, applis fermées, plan d'alimentation) puis restaure tout à la fermeture.</span></h3>
+        ${sw(d.auto_profiles, 'id="gAuto"')}</div>
+        <div class="row"><button class="btn btn-primary" id="gScan">${icon('search')}Rechercher les jeux installés</button>
+        <span class="small muted">Steam, Epic, GOG, Ubisoft, Riot, Battle.net, EA, Xbox · dernière recherche : ${fmtDate(d.scanned)}</span></div>
+        <div id="gProg" class="mt"></div></div>
+      <div class="card"><div class="stat-label">Temps de jeu suivi</div><div class="big-number">${fmtPlay(total)}</div>
+        <div class="small muted">${d.games.length} jeu(x) détecté(s) · ${played.length} joué(s)</div>
+        ${running.length ? `<div class="mt">${chip(`En cours : ${running.map((g) => g.name).join(', ')}`, 'ok')}</div>` : ''}</div>
+    </div>
+    ${card('Les profils', `<div class="grid g4">${Object.entries(d.profiles).map(([id, p]) => `<div class="tip"><b>${esc(p.label)}</b><p>${esc(p.description)}</p></div>`).join('')}</div>
+      <div class="tiny faint mt">Overdrive agit uniquement au niveau de Windows (priorité, mémoire, alimentation) et ne touche jamais aux fichiers ni à la mémoire des jeux : compatible avec les anti-triche (Vanguard, EAC, BattlEye, VAC).</div>`, { ico: 'info' })}
+    ${d.games.length ? `<div class="grid g3">${d.games.map((g) => `<div class="card" style="${g.running ? 'border-color:var(--ok)' : ''}">
+      <div class="row between" style="align-items:flex-start;flex-wrap:nowrap"><div class="grow"><h3 style="font-size:15px" class="ellipsis" title="${esc(g.name)}">${esc(g.name)}</h3>
+        <div class="row mt" style="gap:6px;margin-top:6px">${chip(g.platform)}${chip(KIND[g.kind]?.[0] || g.kind, KIND[g.kind]?.[1])}${g.running ? chip('en cours', 'ok') : ''}</div></div>
+        ${sw(g.auto, `data-gauto="${esc(g.key)}" title="Adapter automatiquement"`)}</div>
+      <div class="kv mt"><span>Temps de jeu</span><span>${g.sessions ? `${fmtPlay(g.playtime)} · ${g.sessions} session(s)` : 'jamais joué'}</span></div>
+      <div class="kv"><span>Dernière partie</span><span>${g.last_played ? fmtDate(g.last_played) : '—'}</span></div>
+      <label class="field mt">Profil de performance<select data-gprof="${esc(g.key)}">${Object.entries(d.profiles).map(([id, p]) => `<option value="${id}" ${g.profile === id ? 'selected' : ''}>${esc(p.label)}${!g.profile_custom && g.profile === id ? ' (auto)' : ''}</option>`).join('')}</select></label>
+      ${g.tip ? `<div class="small muted mt">${icon('info').replace('<svg', '<svg style="width:14px;height:14px;vertical-align:-2px;color:var(--accent)"')} ${esc(g.tip)}</div>` : ''}
+    </div>`).join('')}</div>` : card('', empty('Aucun jeu détecté pour l\'instant : lancez une recherche, ou jouez simplement — les jeux lancés sont reconnus automatiquement.', 'play'))}
+  </div>`;
+  $('#gAuto').onchange = (e) => safe(act(null, () => api('/api/games/settings', { method: 'PUT', body: { auto_profiles: e.target.checked } }), e.target.checked ? 'Adaptation automatique activée' : 'Adaptation automatique désactivée'));
+  $('#gScan').onclick = (e) => safe(act(e.currentTarget, () => startJob('/api/games/scan', {}, $('#gProg'), 'Recherche…'), (r) => `${r.count} jeu(x) trouvé(s)`).then(() => route()));
+  $$('[data-gprof]', v).forEach((sel) => sel.onchange = () => safe(act(null, () => api(`/api/games/${encodeURIComponent(sel.dataset.gprof)}`, { method: 'PUT', body: { profile: sel.value } }), 'Profil enregistré')));
+  $$('[data-gauto]', v).forEach((inp) => inp.onchange = () => safe(act(null, () => api(`/api/games/${encodeURIComponent(inp.dataset.gauto)}`, { method: 'PUT', body: { auto: inp.checked } }), inp.checked ? 'Adaptation activée pour ce jeu' : 'Overdrive ignorera ce jeu')));
 };
 
 // ===== Optimisations =====
@@ -931,6 +971,7 @@ function updateChrome(s) {
   if (s.cpu?.temp != null) chips.push(`<span class="chip ${s.cpu.temp > 90 ? 'bad' : ''}">${icon('thermo')} CPU ${Math.round(s.cpu.temp)}°</span>`);
   if (s.gpu?.temp != null) chips.push(`<span class="chip ${s.gpu.temp > 85 ? 'bad' : ''}">${icon('thermo')} GPU ${Math.round(s.gpu.temp)}°</span>`);
   if (s.battery) chips.push(`<span class="chip ${s.battery.plugged ? '' : 'warn'}">${icon('battery')} ${Math.round(s.battery.percent)} %${s.battery.plugged ? '' : ' batterie'}</span>`);
+  if (s.game) chips.push(`<a class="chip ok" href="#/games">${icon('play')} ${esc(s.game.name)} · ${esc(s.game.profile)}</a>`);
   if (s.alerts?.length) chips.push(`<a class="chip bad" href="#/supervision">${icon('alert')} ${s.alerts.length} alerte(s)</a>`);
   $('#chips').innerHTML = chips.join('');
 }
@@ -960,7 +1001,7 @@ function applyTheme(t) {
 let booted = false;
 async function boot() {
   try { INFO = await api('/api/info'); } catch (e) { if (!e.message.includes('Jeton')) $('#view').innerHTML = card('', empty(`Serveur Overdrive injoignable : ${e.message}`, 'alert')); return; }
-  if (INFO.token && !TOKEN) TOKEN = INFO.token;
+  if (INFO.token) { TOKEN = INFO.token; try { localStorage.setItem('od_token', TOKEN); } catch (e) {} }
   const st = INFO.static || {};
   $('#sidebarFoot').innerHTML = `<div class="row" style="gap:8px">${INFO.admin ? chip('Administrateur', 'ok') : chip('Sans admin', 'warn')}${INFO.local ? '' : chip('Distant', 'acc')}</div>
     <div class="ellipsis"><b style="color:var(--text)">${esc(st.hostname || '')}</b><br>${esc(st.os || '')}</div><div class="tiny faint">Overdrive v${esc(INFO.version)}</div>`;

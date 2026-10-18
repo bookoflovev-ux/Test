@@ -1,14 +1,16 @@
 """Serveur Overdrive : API REST + interface web (accessible en local, sur le réseau ou à distance avec jeton)."""
 import os
+import re
 import secrets
 import socket
 
 import psutil
 from fastapi import Body, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import (__version__, backup, cleaner, config, files, gaming, jobs, journal, maintenance, memory, monitor, network,
+from . import (__version__, backup, cleaner, config, files, games, gaming, jobs, journal, maintenance, memory, monitor, network,
                processes, scheduler, services, startup, supervision, tweaks, updates)
 from .system import IS_WINDOWS, NotSupported, is_admin
 
@@ -21,18 +23,41 @@ def _is_local(request: Request):
     return (request.client.host if request.client else "") in LOCAL
 
 
+IP_HOST = re.compile(r"^(\d{1,3}(\.\d{1,3}){3}|\[[0-9a-f:]+\])$", re.I)
+MUTATING = {"POST", "PUT", "DELETE", "PATCH"}
+
+
+def _host_allowed(request: Request):
+    """Bloque le « DNS rebinding » : seuls localhost, une IP, le nom du PC ou Tailscale sont acceptés."""
+    host = request.headers.get("host", "").lower()
+    host = host if host.startswith("[") and host.endswith("]") else host.rsplit(":", 1)[0] if ":" in host else host
+    return (host in LOCAL or IP_HOST.match(host) is not None or host == socket.gethostname().lower()
+            or host.endswith(".ts.net"))
+
+
 @app.middleware("http")
 async def auth(request: Request, call_next):
     path = request.url.path
-    if (path.startswith("/api") or path == "/metrics") and not _is_local(request):
-        cfg = config.get()
-        if not cfg["allow_remote"]:
-            return JSONResponse({"error": "Accès distant désactivé dans les paramètres."}, 403)
-        given = (request.headers.get("x-token") or request.query_params.get("token")
-                 or request.headers.get("authorization", "").removeprefix("Bearer ").strip())
-        if not given or not secrets.compare_digest(given, cfg["token"]):
-            return JSONResponse({"error": "Jeton d'accès invalide.", "auth": True}, 401)
+    if not _host_allowed(request):
+        return JSONResponse({"error": "Hôte non autorisé."}, 403)
+    if (path.startswith("/api") or path == "/metrics") and request.method != "OPTIONS":
+        local = _is_local(request)
+        # Les lectures locales sont libres ; toute action (même locale) exige le jeton,
+        # sinon n'importe quel site ouvert dans le navigateur pourrait piloter le PC.
+        if not local or request.method in MUTATING:
+            cfg = config.get()
+            if not local and not cfg["allow_remote"]:
+                return JSONResponse({"error": "Accès distant désactivé dans les paramètres."}, 403)
+            given = (request.headers.get("x-token") or request.query_params.get("token")
+                     or request.headers.get("authorization", "").removeprefix("Bearer ").strip())
+            if not given or not secrets.compare_digest(given, cfg["token"]):
+                return JSONResponse({"error": "Jeton d'accès invalide.", "auth": True}, 401)
     return await call_next(request)
+
+
+# Autorise les pages locales (cockpit Nexus sur localhost:4190, etc.) à lire Overdrive.
+app.add_middleware(CORSMiddleware, allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+                   allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Content-Type", "X-Token", "Authorization"])
 
 
 @app.exception_handler(Exception)
@@ -80,7 +105,7 @@ def info(request: Request):
 @app.get("/api/stats")
 def stats():
     s = monitor.snapshot()
-    return {**s, "health": monitor.health_score(s), "alerts": supervision.status()["alerts"]}
+    return {**s, "health": monitor.health_score(s), "alerts": supervision.status()["alerts"], "game": games.current()}
 
 
 @app.get("/api/history")
@@ -325,6 +350,29 @@ def gaming_kill_list(body: dict = Body(...)):
     return {"kill_list": names}
 
 
+# --- Bibliothèque de jeux (profils automatiques) ---------------------------------------------------------------------
+
+@app.get("/api/games")
+def games_library():
+    return games.library()
+
+
+@app.post("/api/games/scan")
+def games_scan():
+    return _job(jobs.submit("Recherche des jeux installés", games.scan))
+
+
+@app.put("/api/games/settings")
+def games_settings(body: dict = Body(...)):
+    config.update({"games": {"auto_profiles": bool(body.get("auto_profiles", True))}})
+    return games.library()
+
+
+@app.put("/api/games/{key}")
+def games_profile(key: str, body: dict = Body(...)):
+    return games.set_profile(key, body.get("profile"), body.get("auto"))
+
+
 # --- Réseau -------------------------------------------------------------------------------------------------------
 
 @app.get("/api/network")
@@ -485,6 +533,7 @@ def manifest():
 @app.on_event("startup")
 def on_start():
     monitor.start()
+    games.start()
     supervision.start()
     scheduler.start()
     journal.log("system", f"Overdrive {__version__} démarré" + (" (administrateur)" if is_admin() else " (sans droits admin)"))

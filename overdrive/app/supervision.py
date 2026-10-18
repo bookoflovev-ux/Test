@@ -5,7 +5,7 @@ import threading
 import time
 import urllib.request
 
-from . import __version__, config, journal, monitor
+from . import __version__, config, games, journal, monitor
 
 _alerts = {}
 _last_push = {"ts": None, "ok": None, "error": None}
@@ -23,7 +23,7 @@ def payload(include_processes=False):
         "net_down_bps": s["net"]["down"], "net_up_bps": s["net"]["up"],
         "disks": [{"mount": d["mount"], "percent": d["percent"], "free": d["free"]} for d in s["disks"]],
         "battery": s["battery"], "uptime": int(s["uptime"]), "health": monitor.health_score(s),
-        "alerts": list(_alerts.values()),
+        "alerts": list(_alerts.values()), "game": games.current(),
     }
     if include_processes:
         data["top_processes"] = s["processes"]["by_cpu"]
@@ -63,6 +63,7 @@ def prometheus():
     m("uptime_seconds", s["uptime"], "Durée de fonctionnement")
     m("health_score", monitor.health_score(s)["score"], "Score de santé Overdrive")
     m("alerts_active", len(_alerts), "Alertes actives")
+    m("game_running", 1 if games.current() else 0, "Un jeu est en cours")
     return "\n".join(lines) + "\n"
 
 

@@ -29,6 +29,7 @@ Options :
 |---|---|
 | **Tableau de bord** | CPU (par cœur), RAM, GPU (NVIDIA via NVML, AMD/Intel via compteurs Windows), réseau, disques, températures, batterie, score de santé, actions rapides |
 | **Mode Jeu · CS2** | Détection Steam/CS2, **profil compétitif en 1 clic** (plan Performances ultimes, Mode Jeu, Game DVR off, priorité MMCSS, HAGS, souris 1:1, CS2 en priorité haute permanente + forcé sur le GPU NVIDIA), **Game Boost** (ferme les applis inutiles, purge la RAM), éditeur `autoexec.cfg`, options de lancement, réglages vidéo, conseils TUF (Turbo, MUX/Ultimate, dual channel) |
+| **Mes jeux** | Détection des jeux installés (Steam, Epic, GOG, Ubisoft, Riot, Battle.net, EA, Xbox + catalogue de ~35 jeux populaires), suivi du temps de jeu, **profil par jeu** (Compétitif / Équilibré / Qualité / Désactivé) appliqué automatiquement au lancement — priorité, GPU dédié, purge RAM, applis fermées, plan d'alimentation — puis restauré à la fermeture. Conseils de réglages par jeu. |
 | **Optimisations** | 14 réglages Windows documentés (impact, risque, redémarrage), plan d'alimentation, « appliquer les recommandés », « tout restaurer » |
 | **Nettoyage** | Temporaires, cache Windows Update, dumps, miniatures, journaux, caches Chrome/Edge/Brave/Firefox/Discord/Steam, shaders GPU, corbeille — **analyse avant suppression** |
 | **Fichiers inutiles** | Gros fichiers, doublons (empreinte BLAKE2), vieux téléchargements, dossiers vides → **envoi à la corbeille** (récupérable) |
@@ -65,6 +66,13 @@ et pour les alertes : `{"type": "alert", "state": "firing" | "resolved", "label"
 **Pull** — `GET /api/nexus` (même JSON), `GET /metrics` (format Prometheus, compatible Grafana / Zabbix /
 Netdata / Uptime Kuma), `GET /api/health`. Documentation complète de l'API : `http://127.0.0.1:8765/api/docs`.
 
+## 🧩 Panneau pour le cockpit « Nexus »
+
+`integrations/nexus/overdrive-panel.js` est un panneau autonome à intégrer au cockpit
+`dashboard-societe.html`. Il lit Overdrive en local, dans le style du cockpit, et inclut le jeu en cours et
+des actions rapides. Le texte à donner à la session Claude Code du cockpit est prêt dans
+`integrations/nexus/PROMPT_NEXUS.md`.
+
 ## 🛡️ Sécurité et honnêteté
 
 - Chaque modification registre / service / plan d'alimentation sauvegarde sa valeur d'origine dans
@@ -74,6 +82,10 @@ Netdata / Uptime Kuma), `GET /api/health`. Documentation complète de l'API : `h
   **MUX en mode Ultimate**, **RAM en dual channel**, **températures maîtrisées** et pilote GPU à jour.
   Les optimisations Windows apportent surtout de la **stabilité** (moins de saccades, meilleurs 1 % low) et moins de latence.
 - Les processus système critiques ne peuvent pas être fermés ; les fichiers sont envoyés à la corbeille.
+- Toute **action** exige le jeton, même en local : un site web ouvert dans le navigateur ne peut pas piloter le PC.
+  Seules les pages `localhost` (cockpit) peuvent lire les données, et les noms d'hôte inconnus sont refusés (protection DNS rebinding).
+- Profils de jeu : uniquement des réglages Windows (priorité, mémoire, alimentation), sans toucher aux fichiers ni à la mémoire
+  des jeux, donc compatibles avec les anti-triche.
 
 ## 🧱 Architecture
 

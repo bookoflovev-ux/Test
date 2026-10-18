@@ -50,6 +50,7 @@ DEFAULTS = {
         ],
         "autoexec": "",
     },
+    "games": {"auto_profiles": True},
     "backup": {
         "sources": [],
         "destination": "",
