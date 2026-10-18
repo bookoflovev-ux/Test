@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Overdrive</title>
+  <meta name="theme-color" content="#0a0d13">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-logo"><svg viewBox="0 0 32 32"><path d="M17.5 3 6 18h8l-1.5 11L24 14h-8z"/></svg></div>
+        <div><div class="brand-name">Overdrive</div><div class="brand-sub">Centre de pilotage</div></div>
+      </div>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-foot" id="sidebarFoot"></div>
+    </aside>
+    <div class="backdrop" id="backdrop"></div>
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-btn menu-btn" id="menuBtn" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+        <div class="topbar-title"><h1 id="pageTitle">Tableau de bord</h1><p id="pageSub"></p></div>
+        <div class="topbar-chips" id="chips"></div>
+        <button class="icon-btn" id="themeBtn" aria-label="Changer de thème"><svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+        <button class="btn btn-primary" id="quickBtn"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg><span>Optimiser</span></button>
+      </header>
+      <section class="view" id="view"></section>
+    </main>
+  </div>
+  <div class="toasts" id="toasts"></div>
+  <div class="modal" id="modal" hidden><div class="modal-card" id="modalCard"></div></div>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

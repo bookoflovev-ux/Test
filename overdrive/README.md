@@ -1,0 +1,100 @@
+# ⚡ Overdrive — centre de pilotage PC
+
+Logiciel **gratuit et open source** pour optimiser, entretenir et superviser un PC Windows,
+conçu pour le jeu (**Counter-Strike 2**) et les portables **ASUS TUF**. Inspiré d'IObit Advanced
+SystemCare / Driver Booster, MyASUS et Armoury Crate, mais **transparent** : chaque réglage est expliqué
+et **réversible en un clic**.
+
+L'interface est une application web moderne (thème sombre/clair) : on l'utilise sur le PC, **depuis
+son téléphone** (installable sur l'écran d'accueil) ou depuis n'importe où via Tailscale (gratuit).
+
+## ▶️ Installation (Windows 10 / 11)
+
+1. Téléchargez ce dossier `overdrive/` sur le PC.
+2. Double-cliquez sur **`start.bat`** et acceptez la demande **administrateur**.
+   - Au premier lancement : Python est installé via `winget` si besoin, puis les dépendances.
+   - L'interface s'ouvre dans une fenêtre d'application : `http://127.0.0.1:8765`.
+3. *(Recommandé)* Cliquez sur **Point de restauration** avant d'appliquer des optimisations.
+
+Options :
+- **`install_autostart.bat`** : lance Overdrive automatiquement à chaque ouverture de session (en tâche de fond).
+- **`build_exe.bat`** : génère un exécutable autonome `dist\Overdrive\Overdrive.exe` (PyInstaller).
+- **Températures CPU/GPU** : lancez [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases)
+  avec *Options → Remote Web Server → Run* (port 8085) ; Overdrive les récupère automatiquement.
+  Sans lui, la température GPU NVIDIA reste disponible.
+
+## 🧭 Modules
+
+| Module | Ce qu'il fait |
+|---|---|
+| **Tableau de bord** | CPU (par cœur), RAM, GPU (NVIDIA via NVML, AMD/Intel via compteurs Windows), réseau, disques, températures, batterie, score de santé, actions rapides |
+| **Mode Jeu · CS2** | Détection Steam/CS2, **profil compétitif en 1 clic** (plan Performances ultimes, Mode Jeu, Game DVR off, priorité MMCSS, HAGS, souris 1:1, CS2 en priorité haute permanente + forcé sur le GPU NVIDIA), **Game Boost** (ferme les applis inutiles, purge la RAM), éditeur `autoexec.cfg`, options de lancement, réglages vidéo, conseils TUF (Turbo, MUX/Ultimate, dual channel) |
+| **Optimisations** | 14 réglages Windows documentés (impact, risque, redémarrage), plan d'alimentation, « appliquer les recommandés », « tout restaurer » |
+| **Nettoyage** | Temporaires, cache Windows Update, dumps, miniatures, journaux, caches Chrome/Edge/Brave/Firefox/Discord/Steam, shaders GPU, corbeille — **analyse avant suppression** |
+| **Fichiers inutiles** | Gros fichiers, doublons (empreinte BLAKE2), vieux téléchargements, dossiers vides → **envoi à la corbeille** (récupérable) |
+| **Processus & démarrage** | Gestionnaire de processus (priorité, fermeture, applis inutiles détectées), programmes au démarrage (même mécanisme que le Gestionnaire des tâches), services non essentiels (liste prudente, réversible), purge RAM (liste standby, comme ISLC/RAMMap) |
+| **Réseau** | Test de latence/gigue/perte, DNS (Cloudflare, Google, Quad9, AdGuard), vidage DNS, optimisation TCP, réinitialisation de la pile |
+| **Mises à jour** | Windows Update (système + **pilotes**), inventaire des pilotes (anciens en orange), applications via **winget**, outils ASUS (MyASUS, Armoury Crate, G-Helper) et liens officiels |
+| **Sauvegarde & maintenance** | Points de restauration, sauvegarde incrémentale de dossiers (disque externe/NAS), sauvegarde config CS2, SFC, DISM, TRIM SSD, CHKDSK |
+| **Supervision · Nexus** | Envoi périodique JSON (push) vers votre serveur Nexus, alertes (déclenchées/résolues), endpoint **Prometheus** `/metrics`, JSON `/api/nexus`, `/api/health`, journal d'activité |
+| **Paramètres & accès distant** | Lien d'accès avec jeton, verrouiller/veille/redémarrer/éteindre à distance, automatisations (nettoyage, RAM, sauvegarde) |
+
+## 📱 Piloter le PC à distance
+
+- **Même Wi-Fi** : *Paramètres → Accès depuis le téléphone* affiche un lien `http://192.168.x.x:8765/?token=…`.
+  Ouvrez-le sur le téléphone puis « Ajouter à l'écran d'accueil ».
+- **Depuis n'importe où** : installez [Tailscale](https://tailscale.com/download) (gratuit) sur le PC et le
+  téléphone et utilisez l'adresse `100.x.x.x` du PC. Pas de port à ouvrir, trafic chiffré.
+- Toute requête qui ne vient pas du PC lui-même exige le jeton (`?token=`, en-tête `X-Token` ou `Authorization: Bearer`).
+  Le jeton se régénère depuis les paramètres. Autorisez le port 8765 dans le pare-feu Windows si Windows le demande (réseau privé uniquement).
+
+## 📡 Supervision « Nexus »
+
+**Push** — *Supervision → Connexion à Nexus* : renseignez l'URL d'ingestion (et une clé API facultative,
+envoyée en `Authorization: Bearer` et `X-API-Key`). Overdrive envoie toutes les N secondes :
+
+```json
+{ "type": "metrics", "host": "PC-TUF", "timestamp": 1792000000,
+  "cpu_percent": 12.5, "cpu_temp": 61, "ram_percent": 48.2, "gpu_percent": 97, "gpu_temp": 74,
+  "net_down_bps": 120000, "disks": [{"mount": "C:\\", "percent": 71.3}],
+  "health": {"score": 90, "issues": []}, "alerts": [], "top_processes": [...] }
+```
+
+et pour les alertes : `{"type": "alert", "state": "firing" | "resolved", "label": "...", "value": 92, "limit": 90}`.
+
+**Pull** — `GET /api/nexus` (même JSON), `GET /metrics` (format Prometheus, compatible Grafana / Zabbix /
+Netdata / Uptime Kuma), `GET /api/health`. Documentation complète de l'API : `http://127.0.0.1:8765/api/docs`.
+
+## 🛡️ Sécurité et honnêteté
+
+- Chaque modification registre / service / plan d'alimentation sauvegarde sa valeur d'origine dans
+  `data/tweaks_backup.json` → bouton **Tout restaurer**. Les points de restauration Windows restent le filet ultime.
+- Pas de « nettoyeur de registre » ni de tweak placebo : les réglages proposés ont un effet documenté.
+- Les gains réels de FPS sur un portable TUF viennent d'abord de : **secteur branché**, **mode Turbo**,
+  **MUX en mode Ultimate**, **RAM en dual channel**, **températures maîtrisées** et pilote GPU à jour.
+  Les optimisations Windows apportent surtout de la **stabilité** (moins de saccades, meilleurs 1 % low) et moins de latence.
+- Les processus système critiques ne peuvent pas être fermés ; les fichiers sont envoyés à la corbeille.
+
+## 🧱 Architecture
+
+```
+overdrive/
+├── run.py              serveur (FastAPI + uvicorn), port 8765
+├── start.bat           lancement admin + installation auto
+├── app/
+│   ├── monitor.py      échantillonnage temps réel + historique
+│   ├── gpu.py          NVML / nvidia-smi / compteurs Windows
+│   ├── tweaks.py       moteur d'optimisations réversibles
+│   ├── gaming.py       CS2, profil compétitif, Game Boost
+│   ├── memory.py       purge RAM (NtSetSystemInformation, EmptyWorkingSet)
+│   ├── cleaner.py      nettoyage   ├── files.py      fichiers inutiles
+│   ├── processes.py    processus   ├── startup.py    démarrage   ├── services.py
+│   ├── network.py      réseau      ├── updates.py    Windows Update / winget / ASUS
+│   ├── backup.py       sauvegardes ├── maintenance.py SFC, DISM, alimentation
+│   ├── supervision.py  Nexus, Prometheus, alertes ├── scheduler.py automatisations
+│   └── main.py         API REST + authentification
+└── static/             interface (HTML/CSS/JS sans framework, PWA)
+```
+
+Sur Linux/macOS l'application démarre en **mode démonstration** (monitoring, nettoyage du cache,
+recherche de fichiers) : pratique pour développer l'interface.
