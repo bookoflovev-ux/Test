@@ -73,9 +73,10 @@ function renderSetup() {
 const NAV = [
   ['Supervision', [['#/', 'dashboard', 'Tableau de bord'], ['#/alerts', 'bell', 'Alertes', 'alerts'], ['#/events', 'activity', "Journal d'activité"]]],
   ['Gestion', [['#/clients', 'clients', 'Clients'], ['#/shares', 'folder', 'Dossiers supervisés']]],
+  ['Droits & conformité', [['#/rights', 'lock', "Droits d'accès"], ['#/architecture', 'report', 'Architecture'], ['#/quotas', 'disk', 'Quotas'], ['#/smb', 'folder', 'Partages & fichiers ouverts'], ['#/sensitive', 'shield', 'Données sensibles'], ['#/health', 'check', 'Santé du serveur']]],
   ['Optimisation', [['#/optimization', 'sparkle', "Centre d'optimisation"], ['#/duplicates', 'copy', 'Doublons'], ['#/archive', 'archive', 'Archivage à froid'], ['#/recycle', 'trash', 'Corbeille']]],
-  ['Outils', [['#/repair', 'wrench', 'Réparation de fichiers'], ['#/jobs', 'tasks', 'Tâches', 'jobs'], ['#/reports', 'report', 'Rapports']]],
-  ['Administration', [['#/settings', 'settings', 'Paramètres']]],
+  ['Outils', [['#/repair', 'wrench', 'Réparation de fichiers'], ['#/jobs', 'tasks', 'Tâches', 'jobs'], ['#/reports', 'list', 'Rapports']]],
+  ['Administration', [['#/service', 'activity', 'Service & disponibilité'], ['#/settings', 'settings', 'Paramètres']]],
 ];
 
 function renderShell() {
@@ -191,6 +192,14 @@ const ROUTES = [
   [/^\/repair$/, viewRepair],
   [/^\/jobs$/, viewJobs],
   [/^\/settings(?:\/(\w+))?$/, viewSettings],
+  [/^\/rights$/, viewRights],
+  [/^\/matrix\/(\d+)$/, viewMatrix],
+  [/^\/architecture$/, viewArchitecture],
+  [/^\/quotas$/, viewQuotas],
+  [/^\/smb$/, viewSmb],
+  [/^\/health$/, viewHealth],
+  [/^\/service$/, viewService],
+  [/^\/sensitive$/, viewSensitive],
 ];
 function parseHash() {
   const raw = location.hash.replace(/^#/, '') || '/';
@@ -208,7 +217,7 @@ function route() {
   const pa = $('#page-actions'); pa.replaceWith(pa.cloneNode(false));
   $$('[data-nav]').forEach(a => {
     const href = a.dataset.nav.slice(1);
-    a.classList.toggle('active', href === '/' ? path === '/' : path.startsWith(href) || (href === '/shares' && path.startsWith('/share/')));
+    a.classList.toggle('active', href === '/' ? path === '/' : path === href || path.startsWith(href + '/') || (href === '/shares' && path.startsWith('/share/')) || (href === '/rights' && path.startsWith('/matrix/')));
   });
   scrollTo(0, 0);
   for (const [re, fn] of ROUTES) {

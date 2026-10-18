@@ -426,3 +426,61 @@ tr.selected, tr.selected:hover { background: var(--accent-wash) !important; }
   .auth-side { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ================================================================ droits, matrice, conformité */
+.lv { display: inline-grid; place-items: center; min-width: 30px; height: 24px; padding: 0 6px; border-radius: 6px; font-size: 11.5px; font-weight: 700; border: 1px solid transparent; font-variant-numeric: tabular-nums; }
+.lv-none { background: var(--surface-2); color: var(--muted); border-color: var(--border); font-weight: 500; }
+.lv-list { background: #86b6ef; color: #0b2a52; }
+.lv-read { background: #5598e7; color: #06152b; }
+.lv-write { background: #2a78d6; color: #fff; }
+.lv-modify { background: #1c5cab; color: #fff; }
+.lv-full { background: #104281; color: #fff; }
+:root[data-theme="dark"] .lv-list { background: #184f95; color: #e8f1fc; }
+:root[data-theme="dark"] .lv-read { background: #256abf; color: #fff; }
+:root[data-theme="dark"] .lv-write { background: #3987e5; color: #06152b; }
+:root[data-theme="dark"] .lv-modify { background: #6da7ec; color: #06152b; }
+:root[data-theme="dark"] .lv-full { background: #9ec5f4; color: #06152b; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .lv-list { background: #184f95; color: #e8f1fc; }
+  :root:not([data-theme="light"]) .lv-read { background: #256abf; color: #fff; }
+  :root:not([data-theme="light"]) .lv-write { background: #3987e5; color: #06152b; }
+  :root:not([data-theme="light"]) .lv-modify { background: #6da7ec; color: #06152b; }
+  :root:not([data-theme="light"]) .lv-full { background: #9ec5f4; color: #06152b; }
+}
+button.lv { cursor: pointer; width: 100%; min-width: 38px; height: 28px; font-family: inherit; }
+button.lv:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.lv:disabled { cursor: default; outline: none; }
+button.lv.inh { opacity: .45; }
+.matrix-wrap { overflow: auto; max-height: 70vh; }
+table.matrix { border-collapse: separate; border-spacing: 0; width: auto; min-width: 100%; }
+table.matrix th, table.matrix td { border-bottom: 1px solid var(--grid); padding: 4px 6px; }
+table.matrix thead th { position: sticky; top: 0; z-index: 2; vertical-align: bottom; }
+table.matrix .mx-folder { position: sticky; left: 0; z-index: 1; background: var(--surface); min-width: 220px; max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 12px; }
+table.matrix thead .mx-folder { z-index: 3; background: var(--surface-2); }
+table.matrix .mx-inh { position: sticky; left: 0; background: var(--surface); white-space: nowrap; }
+table.matrix .mx-col { min-width: 96px; max-width: 140px; font-size: 11px; text-transform: none; letter-spacing: 0; white-space: normal; line-height: 1.25; position: sticky; }
+table.matrix .mx-col div { word-break: break-word; font-weight: 650; color: var(--ink-2); }
+table.matrix .mx-col.sys div { color: var(--muted); }
+table.matrix tbody tr:hover td { background: var(--surface-2); }
+table.matrix tbody tr:hover .mx-folder { background: var(--surface-2); }
+.mx-cell { text-align: center; }
+.mx-x { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 4px; }
+.mx-x:hover { color: var(--critical); }
+.chip-btn { border: 1px solid var(--border-strong); background: var(--surface); color: var(--ink-2); border-radius: 999px; padding: 2px 10px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.chip-btn.on { background: var(--warning-wash); color: var(--warning-ink); border-color: color-mix(in srgb, var(--warning) 50%, transparent); }
+.lv-pop { position: absolute; z-index: 80; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 6px; display: grid; gap: 2px; width: 220px; }
+.lv-pop button { display: flex; gap: 10px; align-items: center; border: 0; background: transparent; padding: 6px 8px; border-radius: 7px; font: inherit; color: var(--ink); cursor: pointer; text-align: left; }
+.lv-pop button:hover { background: var(--accent-wash); }
+.grade { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; font-weight: 800; font-size: 15px; color: #fff; }
+.grade-A { background: #0ca30c; } .grade-B { background: #4c9a2a; } .grade-C { background: #d79a00; } .grade-D { background: #ec835a; } .grade-E { background: #d03b3b; }
+.reco { display: grid; grid-template-columns: auto 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--grid); align-items: start; }
+.reco:last-child { border-bottom: 0; }
+tr.sub-row td { background: var(--surface-2); font-size: 12.5px; padding-top: 6px; padding-bottom: 6px; }
+
+/* ------------------------------------------------------------------ service 24 h/24 */
+ul.guarantees { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+ul.guarantees li { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+ul.guarantees li b { color: var(--ink); }
+ul.guarantees li svg { width: 18px; height: 18px; flex: none; margin-top: 1px; fill: var(--good, #16a34a); }
+.banner > div { font-weight: 450; line-height: 1.5; }
+.banner > div b { font-weight: 650; }

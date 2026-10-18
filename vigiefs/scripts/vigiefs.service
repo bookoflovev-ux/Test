@@ -1,0 +1,34 @@
+# Unité systemd VigieFS — fonctionnement 24 h/24 (installée par scripts/install-linux.sh).
+#
+#   systemctl status vigiefs        état
+#   systemctl stop vigiefs          arrêt volontaire (jamais relancé automatiquement)
+#   journalctl -u vigiefs -f        journal
+#
+# Deux niveaux de relance : le superviseur VigieFS relance le moteur en quelques secondes
+# (plantage, blocage, interface sans réponse) ; systemd relance le superviseur s'il disparaît
+# ou ne signale plus sa vie (WatchdogSec). Un arrêt volontaire (code 0) n'est jamais relancé.
+
+[Unit]
+Description=VigieFS - supervision de serveurs de fichiers (24 h/24)
+Documentation=file://@PREFIX@/README.md
+After=network-online.target remote-fs.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=@RUN_AS@
+WorkingDirectory=@PREFIX@
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@PREFIX@/.venv/bin/python -m vigiefs supervise --mode systemd --host @HOST@ --port @PORT@ --data @DATA@
+Restart=on-failure
+RestartSec=5
+WatchdogSec=120
+TimeoutStartSec=300
+TimeoutStopSec=120
+KillMode=mixed
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

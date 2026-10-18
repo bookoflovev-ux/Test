@@ -8,6 +8,8 @@ import sys
 import tempfile
 
 IS_WINDOWS = sys.platform.startswith("win")
+# Pas de fenêtre de console pour les commandes lancées depuis le service (session 0 ou bureau).
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 class CommandError(RuntimeError):
@@ -18,7 +20,7 @@ def run(cmd, timeout=120, input_text=None, check=True):
     """Exécute une commande (liste d'arguments) et renvoie stdout (texte)."""
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, input=input_text,
-                             encoding="oem" if IS_WINDOWS else "utf-8", errors="replace")
+                             encoding="oem" if IS_WINDOWS else "utf-8", errors="replace", creationflags=NO_WINDOW)
     except FileNotFoundError as exc:
         raise CommandError(f"Commande introuvable : {cmd[0]}") from exc
     except subprocess.TimeoutExpired as exc:
@@ -40,7 +42,7 @@ def powershell(script, timeout=600, as_json=True):
         fh.write(script)
     try:
         res = subprocess.run([exe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path],
-                             capture_output=True, timeout=timeout)
+                             capture_output=True, timeout=timeout, creationflags=NO_WINDOW)
     except subprocess.TimeoutExpired as exc:
         raise CommandError("Délai dépassé pour le script PowerShell") from exc
     finally:

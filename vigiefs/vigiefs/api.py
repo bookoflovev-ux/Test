@@ -30,6 +30,8 @@ from . import docrepair
 from .integrity import STATUS_LABEL, integrity_scan, repair_in_share, repair_upload
 from .jobs import JOB_LABELS
 from .optimize import CATEGORY_KEYS, EMPTY_DIRS, JUNK_CATEGORIES, find_duplicates, resolve_duplicates, run_cleanup
+from .service import ServiceControl, availability, read_journal, run_dir
+from .service import status as service_status
 from .storage import share_policy
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -200,6 +202,8 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
     alerts = AlertManager(db)
     engine = (engine_factory or Engine)(db, alerts, data_dir=data_dir)
     jobs, recycle, archive = engine.jobs, engine.recycle, engine.archive
+    control = ServiceControl(data_dir)
+    engine.guard.control = control
     auth = AuthService(db)
     throttle = LoginThrottle()
 
@@ -216,6 +220,7 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
     app = FastAPI(title="VigieFS", version=__version__, docs_url="/api/docs", redoc_url=None,
                   openapi_url="/api/openapi.json", lifespan=lifespan)
     app.state.db, app.state.engine, app.state.alerts, app.state.auth = db, engine, alerts, auth
+    app.state.control = control
 
     frame_ancestors = os.environ.get("VIGIEFS_FRAME_ANCESTORS", "'none'")
 
@@ -1220,6 +1225,8 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
             "python": platform.python_version(),
             "data_dir": os.path.abspath(data_dir) if has_role(user["role"], "admin") else None,
             "uptime_sec": time.time() - engine.started_at,
+            "service_mode": control.mode,
+            "supervised": control.supervised,
             "events_recorded": engine.monitor.events_total,
             "scans_running": len(engine.running),
             "queue": engine.monitor.queue.qsize(),
@@ -1252,11 +1259,24 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
                 "last_scan_at": s["last_scan_at"], "monitoring": engine.monitor.status.get(s["id"]),
                 "alerts": [{"severity": a["severity"], "category": a["category"], "title": a["title"]} for a in sa],
             })
+        guard = engine.guard.snapshot()
+        maint = engine.maintenance()
+        sup = service_status(data_dir) if control.supervised else {"state": {}}
+        events = read_journal(run_dir(data_dir), since=time.time() - 30 * 86400)
         return {
             "status": worst,
             "generated_at": time.time(),
             "hostname": socket.gethostname(),
             "version": __version__,
+            "service": {
+                "status": guard["status"], "mode": control.mode, "supervised": control.supervised,
+                "uptime_sec": round(time.time() - engine.started_at),
+                "restarts": sup["state"].get("restarts", 0), "last_incident": sup["state"].get("last_incident"),
+                "availability_30d": availability(events, time.time() - 30 * 86400)["pct"],
+                "components": {k["name"]: k["status"] for k in guard["components"]},
+                "maintenance": {"until": maint["until"], "reason": maint.get("reason"), "by": maint.get("by")}
+                if maint else None,
+            },
             "alerts": {sev: sum(1 for a in open_alerts if a["severity"] == sev)
                        for sev in ("critical", "warning", "info")},
             "shares": per_share,
@@ -1284,9 +1304,16 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
         for s in shares:
             lines.append(f"vigiefs_share_quota_bytes{{{lbl(s, clients.get(s['client_id']))}}} {s['quota_bytes'] or 0}")
         lines += ["# TYPE vigiefs_share_available gauge"]
+        # D'après les sondes du planificateur (délai limité) : pas d'accès disque bloquant ici.
+        down = {a["fingerprint"] for a in db.query("SELECT fingerprint FROM alerts WHERE status='open' "
+                                                   "AND fingerprint LIKE 'path:%'")}
         for s in shares:
-            lines.append(f"vigiefs_share_available{{{lbl(s, clients.get(s['client_id']))}}} "
-                         f"{1 if os.path.isdir(s['path']) else 0}")
+            available = 0 if "path:%d" % s["id"] in down else 1
+            lines.append(f"vigiefs_share_available{{{lbl(s, clients.get(s['client_id']))}}} {available}")
+        lines += ["# TYPE vigiefs_uptime_seconds gauge", f"vigiefs_uptime_seconds {time.time() - engine.started_at:.0f}",
+                  "# TYPE vigiefs_component_ok gauge"]
+        for comp in engine.guard.snapshot()["components"]:
+            lines.append(f'vigiefs_component_ok{{component="{comp["name"]}"}} {1 if comp["status"] in ("ok", "repaired") else 0}')
         lines += ["# TYPE vigiefs_alerts_open gauge"]
         for r in db.query("SELECT severity, COUNT(*) AS n FROM alerts WHERE status='open' GROUP BY severity"):
             lines.append(f'vigiefs_alerts_open{{severity="{r["severity"]}"}} {r["n"]}')
@@ -1298,6 +1325,9 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
     from .api_rights import register as register_rights
     register_rights(app, {"db": db, "engine": engine, "jobs": jobs, "alerts": alerts, "viewer": viewer,
                           "operator": operator, "admin": admin, "get_share": get_share_or_404, "resolve": resolve})
+    from .api_service import register as register_service
+    register_service(app, {"db": db, "engine": engine, "viewer": viewer, "admin": admin, "control": control,
+                           "data_dir": data_dir})
 
     # ------------------------------------------------------------ interface web
     @app.exception_handler(OSError)

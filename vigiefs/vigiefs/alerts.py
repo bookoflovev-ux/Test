@@ -26,6 +26,7 @@ CATEGORY_LABELS = {
     "permissions": "Droits d'accès",
     "paths": "Chemins et nommage",
     "sensitive": "Données sensibles",
+    "service": "Service VigieFS",
 }
 
 

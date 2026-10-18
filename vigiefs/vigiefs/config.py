@@ -118,6 +118,14 @@ DEFAULT_SETTINGS = {
             {"name": "Surveillance 1 To", "limit_gb": 1024, "mode": "soft", "warn_pct": 80, "crit_pct": 90},
         ],
     },
+    "service": {
+        "stall_minutes": 15,
+        "probe_timeout_sec": 20,
+        "max_memory_mb": 4096,
+        "min_free_mb": 1024,
+        "db_backup_hour": 2,
+        "db_backups_keep": 7,
+    },
     "sensitive": {
         "max_file_mb": 20,
         "extensions": [".txt", ".csv", ".log", ".xml", ".json", ".html", ".htm", ".md", ".docx", ".xlsx", ".pptx",

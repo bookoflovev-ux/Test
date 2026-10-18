@@ -1,67 +1,211 @@
-<#
+﻿<#
 .SYNOPSIS
-    Installe VigieFS sur un Windows Server (environnement Python + démarrage automatique).
+    Installe VigieFS en service Windows 24 h/24 : relance automatique, démarrage différé, récupération SCM.
 
 .EXAMPLE
     # PowerShell administrateur, depuis le dossier vigiefs :
     .\scripts\install-windows.ps1 -DataDir 'D:\VigieFS\data' -Port 8470 -ListenAll
 
+.EXAMPLE
+    # Serveur sans accès Internet : fournir WinSW (https://github.com/winsw/winsw/releases, WinSW-x64.exe)
+    .\scripts\install-windows.ps1 -Mode winsw -WinSWExe 'C:\Outils\WinSW-x64.exe'
+
+.EXAMPLE
+    .\scripts\install-windows.ps1 -Uninstall      # supprime le service et les tâches (données conservées)
+
 .NOTES
-    - Requiert Python 3.10+ (https://www.python.org/downloads/windows/, cocher « Add to PATH »).
-    - Si NSSM (https://nssm.cc) est présent dans le PATH, VigieFS est installé en service Windows.
-      Sinon, une tâche planifiée « au démarrage » est créée.
-    - Le compte d'exécution doit avoir au minimum la lecture (et la modification si vous utilisez
-      la quarantaine / l'explorateur) sur les dossiers supervisés. Pour des partages UNC distants,
-      utilisez un compte de service du domaine plutôt que SYSTEM.
+    Modes (-Mode auto choisit dans cet ordre) :
+      winsw : service Windows natif via WinSW (licence MIT) — tools\VigieFS-Service.exe, -WinSWExe,
+              ou téléchargé depuis GitHub.
+      nssm  : si nssm.exe est présent dans le PATH.
+      task  : tâche planifiée au démarrage + tâche de garde toutes les 5 minutes (sans service).
+
+    Dans tous les cas VigieFS tourne sous son superviseur (python -m vigiefs supervise) :
+      - plantage ou blocage du moteur -> relance en quelques secondes, journalisée ;
+      - disparition du superviseur -> relance par Windows (actions de récupération du service) ;
+      - redémarrage du serveur -> démarrage automatique (différé, après le réseau et l'AD).
+    VigieFS ne s'arrête que sur décision : Stop-Service VigieFS, « python -m vigiefs stop »,
+    ou le bouton « Arrêter » de l'écran Service & disponibilité.
+
+    Compte de service : pour des partages UNC distants ou la gestion des droits/groupes AD, utilisez
+    un compte de service du domaine (droit « Ouvrir une session en tant que service ») plutôt que SYSTEM.
 #>
 param(
     [string]$DataDir = "$env:ProgramData\VigieFS",
     [int]$Port = 8470,
     [switch]$ListenAll,
+    [ValidateSet('auto', 'winsw', 'nssm', 'task')][string]$Mode = 'auto',
+    [string]$WinSWExe = '',
     [string]$ServiceAccount = '',
-    [string]$ServicePassword = ''
+    [string]$ServicePassword = '',
+    [switch]$Uninstall
 )
 $ErrorActionPreference = 'Stop'
+$ServiceName = 'VigieFS'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
+$python = "$root\.venv\Scripts\python.exe"
+$toolsDir = "$root\tools"
+$wrapper = "$toolsDir\VigieFS-Service.exe"
+$WinSWUrl = 'https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe'
+
+function Esc([string]$s) { [System.Security.SecurityElement]::Escape($s) }
+
+function Stop-Existing {
+    $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($svc -and $svc.Status -ne 'Stopped') {
+        Write-Host '==> Arrêt du service existant' -ForegroundColor Cyan
+        Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+        $svc.WaitForStatus('Stopped', (New-TimeSpan -Seconds 120))
+    }
+    if (Get-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue) {
+        Stop-ScheduledTask -TaskName $ServiceName -ErrorAction SilentlyContinue
+    }
+}
+
+function Remove-VigieFS {
+    Stop-Existing
+    if (Test-Path $wrapper) { & $wrapper uninstall 2>$null | Out-Null }
+    if (Get-Command nssm -ErrorAction SilentlyContinue) { nssm remove $ServiceName confirm 2>$null | Out-Null }
+    if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) { sc.exe delete $ServiceName | Out-Null }
+    foreach ($t in @($ServiceName, "$ServiceName-Garde")) {
+        if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) {
+            Unregister-ScheduledTask -TaskName $t -Confirm:$false
+        }
+    }
+}
+
+function Get-WinSW {
+    New-Item -ItemType Directory -Force -Path $toolsDir | Out-Null
+    if ($WinSWExe) { Copy-Item $WinSWExe $wrapper -Force; return $true }
+    if (Test-Path $wrapper) { return $true }
+    try {
+        Write-Host "==> Téléchargement de WinSW ($WinSWUrl)" -ForegroundColor Cyan
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $WinSWUrl -OutFile $wrapper -UseBasicParsing
+        return $true
+    } catch {
+        Write-Warning "WinSW indisponible ($($_.Exception.Message)) : fournissez-le avec -WinSWExe."
+        Remove-Item $wrapper -ErrorAction SilentlyContinue
+        return $false
+    }
+}
+
+function Set-Recovery {
+    # Filet de sécurité du gestionnaire de services : relance si le service lui-même s'arrête en erreur.
+    sc.exe failure $ServiceName reset= 3600 actions= restart/10000/restart/30000/restart/60000 | Out-Null
+    sc.exe failureflag $ServiceName 1 | Out-Null
+    sc.exe config $ServiceName start= delayed-auto | Out-Null
+    if ($ServiceAccount) {
+        sc.exe config $ServiceName obj= $ServiceAccount password= $ServicePassword | Out-Null
+    }
+}
+
+if ($Uninstall) {
+    Remove-VigieFS
+    Write-Host 'VigieFS désinstallé (données conservées dans le dossier de données).' -ForegroundColor Green
+    return
+}
+
+Stop-Existing
 
 Write-Host "==> Création de l'environnement Python" -ForegroundColor Cyan
 if (-not (Test-Path "$root\.venv")) { python -m venv "$root\.venv" }
-& "$root\.venv\Scripts\python.exe" -m pip install --upgrade pip | Out-Null
-& "$root\.venv\Scripts\python.exe" -m pip install -r "$root\requirements.txt"
+& $python -m pip install --upgrade pip | Out-Null
+& $python -m pip install -r "$root\requirements.txt"
 
-New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
+New-Item -ItemType Directory -Force -Path $DataDir, "$DataDir\logs" | Out-Null
 $hostAddr = if ($ListenAll) { '0.0.0.0' } else { '127.0.0.1' }
-$python = "$root\.venv\Scripts\python.exe"
-$svcArgs = "-m vigiefs --host $hostAddr --port $Port --data `"$DataDir`""
 
-if (Get-Command nssm -ErrorAction SilentlyContinue) {
-    Write-Host '==> Installation du service Windows (NSSM)' -ForegroundColor Cyan
-    nssm stop VigieFS 2>$null | Out-Null
-    nssm remove VigieFS confirm 2>$null | Out-Null
-    nssm install VigieFS $python $svcArgs
-    nssm set VigieFS AppDirectory $root
-    nssm set VigieFS DisplayName 'VigieFS - Supervision serveur de fichiers'
-    nssm set VigieFS Start SERVICE_AUTO_START
-    nssm set VigieFS AppStdout "$DataDir\service.log"
-    nssm set VigieFS AppStderr "$DataDir\service.log"
-    if ($ServiceAccount) { nssm set VigieFS ObjectName $ServiceAccount $ServicePassword }
-    nssm start VigieFS
-} else {
-    Write-Host '==> NSSM absent : création d''une tâche planifiée au démarrage' -ForegroundColor Yellow
-    $action = New-ScheduledTaskAction -Execute $python -Argument $svcArgs -WorkingDirectory $root
-    $trigger = New-ScheduledTaskTrigger -AtStartup
-    $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
-        -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries
-    if ($ServiceAccount) {
-        Register-ScheduledTask -TaskName 'VigieFS' -Action $action -Trigger $trigger -Settings $settings `
-            -User $ServiceAccount -Password $ServicePassword -RunLevel Highest -Force | Out-Null
-    } else {
-        $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-        Register-ScheduledTask -TaskName 'VigieFS' -Action $action -Trigger $trigger -Settings $settings `
-            -Principal $principal -Force | Out-Null
+if ($Mode -eq 'auto') {
+    $Mode = if (Get-WinSW) { 'winsw' } elseif (Get-Command nssm -ErrorAction SilentlyContinue) { 'nssm' } else { 'task' }
+} elseif ($Mode -eq 'winsw' -and -not (Get-WinSW)) {
+    throw 'WinSW introuvable : utilisez -WinSWExe ou -Mode nssm / task.'
+}
+Remove-VigieFS
+$svcMode = @{ winsw = 'windows-service'; nssm = 'windows-service'; task = 'tache-planifiee' }[$Mode]
+$svcArgs = "-m vigiefs supervise --mode $svcMode --host $hostAddr --port $Port --data `"$DataDir`""
+
+switch ($Mode) {
+    'winsw' {
+        Write-Host '==> Installation du service Windows (WinSW)' -ForegroundColor Cyan
+        @"
+<service>
+  <id>$ServiceName</id>
+  <name>VigieFS - Supervision serveur de fichiers</name>
+  <description>Supervision, droits, quotas et maintenance des serveurs de fichiers, 24 h/24.</description>
+  <executable>$(Esc $python)</executable>
+  <arguments>$(Esc $svcArgs)</arguments>
+  <workingdirectory>$(Esc $root)</workingdirectory>
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="restart" delay="60 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>90 sec</stoptimeout>
+  <logpath>$(Esc "$DataDir\logs")</logpath>
+  <log mode="roll-by-size"><sizeThreshold>10240</sizeThreshold><keepFiles>8</keepFiles></log>
+</service>
+"@ | Set-Content -Path "$toolsDir\VigieFS-Service.xml" -Encoding UTF8
+        & $wrapper install
+        Set-Recovery
+        Start-Service -Name $ServiceName
     }
-    Start-ScheduledTask -TaskName 'VigieFS'
+    'nssm' {
+        Write-Host '==> Installation du service Windows (NSSM)' -ForegroundColor Cyan
+        nssm install $ServiceName $python $svcArgs
+        nssm set $ServiceName AppDirectory $root
+        nssm set $ServiceName DisplayName 'VigieFS - Supervision serveur de fichiers'
+        nssm set $ServiceName Description 'Supervision, droits, quotas et maintenance des serveurs de fichiers, 24 h/24.'
+        nssm set $ServiceName Start SERVICE_DELAYED_AUTO_START
+        nssm set $ServiceName AppExit Default Restart      # toute sortie imprévue : relance
+        nssm set $ServiceName AppExit 0 Exit               # arrêt volontaire (code 0) : le service s'arrête
+        nssm set $ServiceName AppRestartDelay 5000
+        nssm set $ServiceName AppThrottle 10000
+        nssm set $ServiceName AppStopMethodConsole 90000   # laisse au superviseur le temps d'arrêter proprement
+        nssm set $ServiceName AppStdout "$DataDir\logs\service.log"
+        nssm set $ServiceName AppStderr "$DataDir\logs\service.log"
+        nssm set $ServiceName AppRotateFiles 1
+        nssm set $ServiceName AppRotateOnline 1
+        nssm set $ServiceName AppRotateBytes 10485760
+        Set-Recovery
+        nssm start $ServiceName
+    }
+    'task' {
+        Write-Host '==> Sans service : tâche planifiée au démarrage + tâche de garde' -ForegroundColor Yellow
+        $action = New-ScheduledTaskAction -Execute $python -Argument $svcArgs -WorkingDirectory $root
+        $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
+            -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+            -StartWhenAvailable -MultipleInstances IgnoreNew
+        $principal = if ($ServiceAccount) { $null } else {
+            New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest }
+        # Garde : relance la tâche si elle ne tourne plus, sauf arrêt volontaire (run\arret-volontaire.json).
+        $guard = "$DataDir\vigiefs-garde.ps1"
+        @"
+`$marker = '$DataDir\run\arret-volontaire.json'
+if (Test-Path `$marker) { exit 0 }
+`$t = Get-ScheduledTask -TaskName '$ServiceName' -ErrorAction SilentlyContinue
+if (`$t -and `$t.State -ne 'Running') { Start-ScheduledTask -TaskName '$ServiceName' }
+"@ | Set-Content -Path $guard -Encoding UTF8
+        $gAction = New-ScheduledTaskAction -Execute 'powershell.exe' `
+            -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$guard`""
+        $gTriggers = @((New-ScheduledTaskTrigger -AtStartup),
+                       (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)))
+        $gSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2) -StartWhenAvailable `
+            -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
+        foreach ($def in @(@{ n = $ServiceName; a = $action; t = (New-ScheduledTaskTrigger -AtStartup); s = $settings },
+                           @{ n = "$ServiceName-Garde"; a = $gAction; t = $gTriggers; s = $gSettings })) {
+            if ($ServiceAccount) {
+                Register-ScheduledTask -TaskName $def.n -Action $def.a -Trigger $def.t -Settings $def.s `
+                    -User $ServiceAccount -Password $ServicePassword -RunLevel Highest -Force | Out-Null
+            } else {
+                Register-ScheduledTask -TaskName $def.n -Action $def.a -Trigger $def.t -Settings $def.s `
+                    -Principal $principal -Force | Out-Null
+            }
+        }
+        Start-ScheduledTask -TaskName $ServiceName
+    }
 }
 
 if ($ListenAll) {
@@ -70,6 +214,19 @@ if ($ListenAll) {
         New-NetFirewallRule -DisplayName 'VigieFS' -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow | Out-Null
     }
 }
+
+Write-Host '==> Vérification du démarrage' -ForegroundColor Cyan
+$ok = $false
+for ($i = 0; $i -lt 60 -and -not $ok; $i++) {
+    Start-Sleep -Seconds 2
+    try { $ok = (Invoke-WebRequest -Uri "http://127.0.0.1:$Port/api/health/live" -UseBasicParsing -TimeoutSec 5).StatusCode -eq 200 } catch { }
+}
 Write-Host ''
-Write-Host "VigieFS est installé. Interface : http://localhost:$Port/" -ForegroundColor Green
+if ($ok) {
+    Write-Host "VigieFS est installé et en service ($Mode). Interface : http://localhost:$Port/" -ForegroundColor Green
+} else {
+    Write-Warning "VigieFS ne répond pas encore : consultez $DataDir\run\console.log et « python -m vigiefs status »."
+}
 Write-Host "Données : $DataDir"
+Write-Host "État : & '$python' -m vigiefs status --data '$DataDir'"
+Write-Host "Arrêt volontaire : Stop-Service $ServiceName  (ou -m vigiefs stop --data '$DataDir')"

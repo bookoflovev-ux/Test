@@ -105,6 +105,60 @@ class Monitor:
     def is_active(self, share_id):
         return self.status.get(share_id) == "active"
 
+    # --- auto-réparation (appelée par la garde toutes les 10 s) ---
+    def health_check(self, repair=True):
+        """Détecte un observateur, un écrivain ou une surveillance de dossier arrêtés et les relance.
+
+        Aucun accès disque ici (un partage réseau bloqué figerait la garde) : une surveillance de
+        dossier interrompue est marquée comme telle, puis reprogrammée par le planificateur après
+        une sonde d'accès à délai limité.
+        """
+        repaired, errors = [], []
+        if self._stop.is_set() or self._observer is None:
+            return {"repaired": repaired, "errors": errors, "watches": 0}
+        if not self._observer.is_alive():
+            if repair:
+                with self._lock:
+                    old, self._observer = self._observer, self._observer_factory()
+                    self._observer.daemon = True
+                    self._observer.start()
+                    for sid in list(self._watches):
+                        self._watches.pop(sid, None)
+                        self.status[sid] = "interrompue"
+                try:
+                    old.stop()
+                except Exception:  # noqa: BLE001
+                    pass
+                repaired.append("L'observateur de fichiers s'était arrêté (surveillance reprogrammée)")
+            else:
+                errors.append("observateur de fichiers arrêté")
+        if self._writer is None or not self._writer.is_alive():
+            if repair:
+                self._writer = threading.Thread(target=self._writer_loop, name="vigiefs-events", daemon=True)
+                self._writer.start()
+                repaired.append("L'écriture du journal d'activité s'était arrêtée")
+            else:
+                errors.append("écriture du journal d'activité arrêtée")
+        try:
+            alive = {em.watch: em.is_alive() for em in list(self._observer.emitters)}
+        except Exception:  # noqa: BLE001
+            alive = None
+        with self._lock:
+            for sid, w in list(self._watches.items()):
+                if alive is not None and not alive.get(w, False):
+                    name = self._shares.get(sid, {}).get("name", sid)
+                    if repair:
+                        self._unwatch_locked(sid)
+                        self.status[sid] = "interrompue"
+                        repaired.append(f"Surveillance de « {name} » interrompue (reprise au prochain cycle)")
+                    else:
+                        errors.append(f"surveillance de « {name} » interrompue")
+            for sid, st in self.status.items():
+                if st.startswith("erreur"):
+                    errors.append(f"{self._shares.get(sid, {}).get('name', sid)} : {st}")
+            watches = len(self._watches)
+        return {"repaired": repaired, "errors": errors, "watches": watches}
+
     # --- traitement des événements ---
     def _writer_loop(self):
         while not self._stop.is_set():

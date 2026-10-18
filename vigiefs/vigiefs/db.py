@@ -305,8 +305,12 @@ class Database:
             for col, decl in SHARE_MIGRATIONS.items():
                 if col not in cols:
                     conn.execute(f"ALTER TABLE shares ADD COLUMN {col} {decl}")
-            conn.execute("UPDATE jobs SET status='interrupted', finished_at=? WHERE status IN ('queued','running')",
-                         (time.time(),))
+            # Tâches coupées par un arrêt ou un incident : conservées pour l'alerte de reprise.
+            self.interrupted_jobs = [dict(r) for r in conn.execute(
+                "SELECT id, type, title, share_id FROM jobs WHERE status IN ('queued','running')")]
+            conn.execute("UPDATE jobs SET status='interrupted', finished_at=?, "
+                         "error=COALESCE(error, 'Interrompue par un arrêt ou un redémarrage du service') "
+                         "WHERE status IN ('queued','running')", (time.time(),))
 
     @contextmanager
     def connect(self):
@@ -343,6 +347,44 @@ class Database:
             conn.executemany(sql, seq)
 
     # --- Paramètres clé/valeur (JSON) ---
+    # --- maintenance (fonctionnement continu) ---
+    def checkpoint(self):
+        """Reporte le journal WAL dans la base et le tronque (évite un fichier -wal qui grossit)."""
+        if self.path == ":memory:":
+            return
+        with self._write_lock, self.connect() as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+    def quick_check(self):
+        with self.connect() as conn:
+            rows = [r[0] for r in conn.execute("PRAGMA quick_check").fetchall()]
+        return "ok" if rows == ["ok"] else "; ".join(rows[:5])
+
+    def optimize(self):
+        with self.connect() as conn:
+            conn.execute("PRAGMA optimize")
+
+    def backup_to(self, folder, keep=7):
+        """Sauvegarde en ligne cohérente (API de sauvegarde SQLite), rotation sur `keep` copies."""
+        os.makedirs(folder, exist_ok=True)
+        dest = os.path.join(folder, time.strftime("vigiefs-%Y%m%d-%H%M%S.db"))
+        src = sqlite3.connect(self.path, timeout=30)
+        try:
+            out = sqlite3.connect(dest)
+            try:
+                src.backup(out, pages=4096, sleep=0.05)
+            finally:
+                out.close()
+        finally:
+            src.close()
+        backups = sorted(f for f in os.listdir(folder) if f.startswith("vigiefs-") and f.endswith(".db"))
+        for old in backups[:-max(1, keep)]:
+            try:
+                os.remove(os.path.join(folder, old))
+            except OSError:
+                pass
+        return dest
+
     def get_setting(self, key, default=None):
         row = self.query_one("SELECT value FROM settings WHERE key = ?", (key,))
         if row is None:

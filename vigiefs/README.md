@@ -5,19 +5,76 @@ partages de fichiers de vos clients, dans l'esprit du *Gestionnaire de ressource
 serveur de fichiers* (FSRM) de Windows Server, mais pensée **multi-clients** pour une
 société d'infogérance. Elle complète Datto (sauvegarde / RMM) sans le remplacer.
 
+Tout-en-un pour les serveurs de fichiers Windows (NTFS/SMB) et Linux (ACL POSIX/Samba) :
+supervision, **droits d'accès et matrice AGDLP**, **architecture et chemins trop longs**,
+**quotas stricts**, optimisation du stockage, réparation de documents. Conçu pour tourner
+**24 h/24, 7 j/7** : il ne s'arrête que sur décision.
+
 ![Tableau de bord](docs/tableau-de-bord.png)
 
 ## Fonctionnalités
+
+### Fonctionnement 24 h/24, 7 j/7
+| Mécanisme | Ce que fait VigieFS |
+|---|---|
+| **Superviseur** | `python -m vigiefs supervise` lance le moteur et le **relance en quelques secondes** s'il s'arrête (plantage), se **bloque** (plus de battement de cœur pendant 5 min, piles des threads capturées) ou si l'interface ne répond plus (4 sondes HTTP). Délai progressif 1 s → 60 s, **sans limite de tentatives** : VigieFS revient seul dès que la cause disparaît (réseau, disque, base restaurée). |
+| **Service système** | Service Windows (WinSW ou NSSM) avec **actions de récupération** et **démarrage automatique différé**, ou unité systemd (`Restart=on-failure`, chien de garde `WatchdogSec`, `Type=notify`). Sans service : tâche planifiée + **tâche de garde** toutes les 5 min. |
+| **Auto-réparation** | Garde interne toutes les 10 s : planificateur, observateur de fichiers, écriture du journal et surveillance de chaque dossier **relancés à chaud**, sans coupure ; alerte « Composant relancé ». |
+| **Réseau** | Accès aux partages sondé avec un **délai maximal** (20 s) : un NAS ou un partage UNC figé ne bloque ni le démarrage ni le planificateur ; la surveillance reprend seule au retour du partage. |
+| **Base de données** | Point de contrôle WAL horaire, **contrôle d'intégrité et sauvegarde en ligne quotidiens** (7 copies), restauration en une commande (`restore-db`). |
+| **Ressources** | Alerte d'espace disque des données ; au-delà de la limite mémoire, **redémarrage propre planifié** dès qu'aucune tâche ne tourne. |
+| **Après un incident** | Alerte « VigieFS a redémarré automatiquement » avec la cause, tâches interrompues signalées (celles qui modifient fichiers ou droits sont à vérifier), analyses planifiées reprises. |
+| **Arrêt volontaire uniquement** | Bouton *Arrêter* (confirmation « ARRÊTER »), `python -m vigiefs stop`, `Stop-Service VigieFS` ou `systemctl stop vigiefs` : arrêt propre, **journalisé** (qui, quand, pourquoi) et jamais relancé automatiquement. |
+| **Mode maintenance** | Suspend pour une durée donnée les actions planifiées et les alertes de disponibilité (Datto reste au vert) ; temps réel et anti-rançongiciel restent actifs. |
+| **Disponibilité** | Écran *Service & disponibilité* : état des composants, **disponibilité 7 / 30 jours** (seules les coupures subies comptent), journal des démarrages, incidents, relances, réparations et arrêts. |
+
+![Service & disponibilité](docs/service.png)
 
 ### Supervision
 | Domaine | Ce que fait VigieFS |
 |---|---|
 | **Multi-clients** | Clients → dossiers supervisés (chemins locaux `D:\…` ou UNC `\\SRV\partage`). Vue consolidée, recherche globale (Ctrl K). |
-| **Quotas** | Quota logiciel par dossier, seuils d'avertissement / critique, **prévision de saturation** (tendance sur 30 jours). |
+| **Quotas** | Quota par dossier, seuils d'avertissement / critique, **prévision de saturation** (tendance sur 30 jours) ; quotas stricts et par sous-dossier ci-dessous. |
 | **Anti-rançongiciel** | Détection temps réel des extensions chiffrées, des notes de rançon et des **rafales de modifications** → alerte critique immédiate. |
 | **Filtrage de fichiers** | Extensions interdites, alerte ou **quarantaine** automatique. |
 | **Journal d'activité** | Créations, modifications, suppressions, renommages en temps réel, export CSV. |
 | **Alertes** | Dédoublonnées, escalade, acquittement, résolution automatique ; e-mail (SMTP) et webhook signé HMAC. |
+
+### Droits d'accès et matrice
+| Domaine | Ce que fait VigieFS |
+|---|---|
+| **Relevé complet des ACL** | NTFS (`Get-Acl` : masques, héritage, portée, propriétaire, refus, SID résolus) et POSIX (`getfacl` : ACL d'accès et par défaut), sur la profondeur choisie. Historique des relevés et **dérive** entre deux analyses. |
+| **Audit** | Écriture / lecture ouverte à « Tout le monde » / « Utilisateurs authentifiés », **droits nominatifs** (hors modèle AGDLP), **SID orphelins**, refus explicites, contrôle total hors administrateurs, SYSTEM / administrateurs absents, ruptures d'héritage, ACL explicites trop profondes, ACL surchargées, droits spéciaux, propriétaire orphelin → **score des droits sur 100**. |
+| **Qui a accès à quoi ?** | Accès effectifs d'un utilisateur ou d'un groupe (appartenances AD / POSIX résolues, refus pris en compte) sur toute l'arborescence. |
+| **Matrice de droits** | Grille dossiers × identités éditable (niveaux Aucun / Parcours / Lecture / Écriture / Modification / Contrôle total, héritage par ligne). Trois points de départ : **proposition AGDLP** (groupes de domaine local `GDL_CLIENT_PARTAGE_DOSSIER_RW/RO` par dossier métier, droit de parcours sur les parents pour l'énumération basée sur l'accès, membres proposés d'après les droits actuels), relevé de l'existant, ou matrice vierge. |
+| **Plan d'écart** | Différence exacte entre la matrice et les droits réels : opérations à appliquer, avertissements (héritage à couper, aucun administrateur en contrôle total…). |
+| **Application** | Sauvegarde intégrale préalable (`icacls /save` ou `getfacl -R`), création des groupes et des membres (AD ou POSIX) en option, application, nouveau relevé et écarts restants. **Restauration** en un clic. Ou génération du **script PowerShell / shell** à faire valider. |
+| **Échanges** | Export **Excel** (matrice, groupes, légende) et **CSV** réimportable après modification hors ligne. Alerte si les droits réels s'écartent ensuite de la matrice appliquée. |
+| **Opérations unitaires** | Accorder, retirer, couper / rétablir l'héritage, changer le propriétaire, depuis l'arborescence. |
+
+| Droits d'un dossier | Matrice AGDLP |
+|---|---|
+| ![](docs/droits.png) | ![](docs/matrice.png) |
+
+### Architecture, chemins et nommage
+| Domaine | Ce que fait VigieFS |
+|---|---|
+| **Note d'architecture** | Note A à E sur 100 (structure, longueur des chemins, nommage, droits, hygiène) et **recommandations priorisées** avec lien vers l'action. |
+| **Chemins trop longs** | Longueur vue par l'utilisateur (préfixe UNC / lecteur réseau configurable) : alerte au-delà de 240, critique au-delà de **260 (MAX_PATH)**, seuil **400 OneDrive / SharePoint**, nom de plus de 255 caractères. **Alerte en temps réel** dès qu'un fichier trop long est créé ou renommé. Export CSV des chemins. |
+| **Nommage** | Caractères interdits (`" * : < > ? \ \|`), espaces en début ou fin, point final, noms réservés (CON, PRN, AUX, NUL, COM1…, LPT1…), noms bloqués par OneDrive / SharePoint (`.lock`, `desktop.ini`, `_vti_`, `~$`), conflits de casse. |
+| **Structure** | Profondeur excessive, dossiers surchargés, fichiers à la racine, répartition par niveau, arborescence annotée (taille, fichiers, chemin maximal, ACL explicites, anomalies). |
+
+### Quotas stricts, partages, santé, données sensibles
+| Domaine | Ce que fait VigieFS |
+|---|---|
+| **Quotas stricts** | Quotas souples (alerte) ou **stricts** sur un dossier ou un sous-dossier, **quota automatique par sous-dossier** (dossiers personnels, projets), modèles. Application par **FSRM** (`New-FsrmQuota`, `New-FsrmAutoQuota`, seuils) quand il est présent, sinon **verrouillage VigieFS** : écriture refusée aux comptes non administrateurs dès le dépassement, rétablie automatiquement sous 98 %. Script FSRM généré. |
+| **Partages SMB** | Partages et droits de partage, **fichiers ouverts** et **sessions** (fermeture / déconnexion), énumération basée sur l'accès (ABE) ; équivalents Samba (`smbstatus`). |
+| **Santé du serveur** | SMB1, signature et chiffrement SMB, `LongPathsEnabled`, noms courts 8.3, volumes, clichés instantanés (VSS), audit d'accès aux fichiers, FSRM, services Datto, Defender / dossiers contrôlés, redémarrage en attente ; sous Linux : outils ACL, limites inotify, protocole et signature Samba, ABE, disques. |
+| **Données sensibles (RGPD)** | NIR avec clé de contrôle, IBAN (ISO 7064), cartes bancaires (Luhn), mots de passe en clair, données de santé, listes d'e-mails / téléphones dans les documents (y compris Word, Excel, PowerPoint, OpenDocument) ; valeurs masquées, **croisement avec les droits** pour repérer les données exposées à tous. |
+
+| Architecture d'un dossier | Quotas | Partages & fichiers ouverts |
+|---|---|---|
+| ![](docs/architecture.png) | ![](docs/quotas.png) | ![](docs/partages-smb.png) |
 
 ### Optimisation du stockage
 | Domaine | Ce que fait VigieFS |
@@ -43,7 +100,7 @@ société d'infogérance. Elle complète Datto (sauvegarde / RMM) sans le rempla
 Principes : l'original n'est jamais écrasé sans être conservé, chaque fichier réparé est **re-diagnostiqué** avant d'être proposé, et un fichier irrécupérable est signalé comme tel avec la marche à suivre (restauration Datto).
 
 ### Administration et intégration
-Explorateur avec ACL NTFS, rôles (lecture seule / opérateur / administrateur), journal d'audit, API REST documentée (`/api/docs`), clés d'API, `/api/v1/status`, `/metrics` Prometheus, composant **Datto RMM**, rapports CSV par client.
+Explorateur avec ACL NTFS, rôles (lecture seule / opérateur / administrateur), journal d'audit, API REST documentée (`/api/docs`), clés d'API, `/api/v1/status`, sondes `/api/health/live` et `/api/health/ready`, `/metrics` Prometheus, composant **Datto RMM**, rapports CSV par client.
 
 | Centre d'optimisation | Nettoyage | Doublons |
 |---|---|---|
@@ -61,40 +118,59 @@ Explorateur avec ACL NTFS, rôles (lecture seule / opérateur / administrateur),
 
 Prérequis : **Python 3.10+** (cocher « Add python.exe to PATH » à l'installation).
 
-**Essai rapide** : double-cliquez sur `start-vigiefs.bat`, puis ouvrez <http://localhost:8470/>.
+**Essai rapide** : double-cliquez sur `start-vigiefs.bat` (mode console supervisé, relance
+automatique), puis ouvrez <http://localhost:8470/>. `stop-vigiefs.bat` l'arrête.
 
-**Installation permanente** (PowerShell administrateur, depuis le dossier `vigiefs`) :
+**Installation 24 h/24** (PowerShell administrateur, depuis le dossier `vigiefs`) :
 
 ```powershell
 .\scripts\install-windows.ps1 -DataDir 'D:\VigieFS\data' -Port 8470 -ListenAll `
     -ServiceAccount 'DOMAINE\svc-vigiefs' -ServicePassword '…'
 ```
 
-- Avec [NSSM](https://nssm.cc) dans le PATH, VigieFS devient un **service Windows** ;
-  sinon une tâche planifiée « au démarrage » est créée.
-- Le compte de service doit pouvoir **lire** les dossiers supervisés (et **modifier**
-  pour la quarantaine et l'explorateur). Pour des partages distants, préférez un compte
-  de service du domaine à SYSTEM.
+- **Service Windows** via [WinSW](https://github.com/winsw/winsw) (téléchargé, ou fourni hors
+  ligne avec `-WinSWExe`), à défaut [NSSM](https://nssm.cc) s'il est dans le PATH, sinon tâche
+  planifiée au démarrage + tâche de garde (`-Mode winsw|nssm|task` pour forcer). Démarrage
+  automatique **différé**, actions de récupération du service (relance à 10 s, 30 s, 60 s).
+- Relancer le script met VigieFS à jour (arrêt propre, dépendances, réinstallation du service).
+  `-Uninstall` supprime le service et les tâches (les données sont conservées).
+- Le compte de service doit pouvoir **lire** les dossiers supervisés (et **modifier** pour la
+  quarantaine, l'explorateur, les quotas stricts et l'application des droits ; module
+  ActiveDirectory pour créer les groupes). Pour des partages distants, préférez un compte de
+  service du domaine (droit « Ouvrir une session en tant que service ») à SYSTEM.
 - `-ListenAll` ouvre l'interface au réseau (et le port du pare-feu). Sinon elle n'écoute
   que sur `127.0.0.1`.
 
 Au premier accès, l'écran **« Première installation »** crée le compte administrateur.
 
-### Linux / autre
+### Linux (systemd)
 
 ```bash
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
-python -m vigiefs --host 0.0.0.0 --port 8470 --data /var/lib/vigiefs
+sudo HOST=0.0.0.0 PORT=8470 DATA=/var/lib/vigiefs ./scripts/install-linux.sh
 ```
 
-### Options
+Installe le programme dans `/opt/vigiefs`, l'unité `vigiefs.service` (`Type=notify`,
+`Restart=on-failure`, `WatchdogSec=120`, démarrage au boot) et relève les limites inotify
+pour la surveillance de grandes arborescences. `--uninstall` pour retirer le service.
+Le paquet `acl` (getfacl/setfacl) est requis pour la gestion des droits.
+
+### Commandes
 
 ```
-python -m vigiefs [--host 127.0.0.1] [--port 8470] [--data DOSSIER]
-                  [--ssl-certfile cert.pem --ssl-keyfile key.pem]
-                  [--reset-password UTILISATEUR]
+python -m vigiefs [serve]     interface + moteur, sans superviseur
+python -m vigiefs supervise   mode 24 h/24 (utilisé par les services) : relance automatique
+python -m vigiefs status      état, dernier incident, disponibilité sur 30 jours
+python -m vigiefs stop        arrêt volontaire (--reason "…"), jamais relancé automatiquement
+python -m vigiefs restart     redémarrage propre
+python -m vigiefs restore-db  restaure la dernière sauvegarde saine de la base (--from FICHIER)
+
+Options : [--host 127.0.0.1] [--port 8470] [--data DOSSIER]
+          [--ssl-certfile cert.pem --ssl-keyfile key.pem] [--reset-password UTILISATEUR]
+          supervise : [--mode windows-service|systemd|…] [--hang-timeout 300]
 ```
+
+`status` renvoie 0 si VigieFS tourne, 3 s'il a été arrêté volontairement, 1 s'il a été
+interrompu sans arrêt volontaire (utilisable par un script de supervision).
 
 Variables d'environnement équivalentes : `VIGIEFS_HOST`, `VIGIEFS_PORT`, `VIGIEFS_DATA`.
 `VIGIEFS_FRAME_ANCESTORS` (ex. `https://supervision.exemple.fr`) autorise l'intégration
@@ -110,13 +186,18 @@ Pour un accès hors du réseau d'administration, servez VigieFS en **HTTPS**
    d'analyse, surveillance temps réel, filtrage. Une première analyse démarre aussitôt.
 3. **Paramètres › Notifications** : SMTP (ex. `smtp.office365.com:587`) et/ou webhook
    (Teams, Slack, PSA, centre de supervision). Bouton *Envoyer un test*.
-4. **Paramètres › Sécurité & filtrage** : seuils anti-rançongiciel, extensions bloquées,
+4. **Paramètres › Conformité** : seuils de longueur de chemin, préfixe des groupes
+   (`GDL` par défaut) et unité d'organisation AD, modèles de quotas, données sensibles.
+   **Paramètres › Sécurité & filtrage** : seuils anti-rançongiciel, extensions bloquées,
    dossier de quarantaine (**en dehors** des dossiers supervisés).
 5. **Paramètres › Stockage & réparation** : dossier de la corbeille et rétention, destination
    des **archives à froid** (NAS, disque d'archive…), anciennetés minimales des fichiers inutiles,
    chemin de LibreOffice (optionnel, pour les anciens formats `.doc/.xls/.ppt`).
 6. **Paramètres › Utilisateurs** : comptes des techniciens (rôle *Opérateur*) et des
    personnes en consultation (*Lecture seule*).
+7. Sur chaque dossier : onglet **Droits** › *Analyser les droits*, puis *Proposition AGDLP*
+   pour obtenir une matrice cible à ajuster, exporter (Excel) ou appliquer ; onglet
+   **Architecture** pour la note et les chemins trop longs ; onglet **Quotas**.
 
 ### Rôles
 
@@ -124,7 +205,7 @@ Pour un accès hors du réseau d'administration, servez VigieFS en **HTTPS**
 |---|---|
 | Lecture seule | Consultation de tout (sauf paramètres), exports CSV. |
 | Opérateur | + clients, dossiers, analyses, acquittement d'alertes, nettoyage, doublons, archivage et restauration, réparation, opérations sur les fichiers (suppressions vers la corbeille). |
-| Administrateur | + purge définitive de la corbeille, suppression de clients, paramètres, utilisateurs, clés d'API, journal d'audit. |
+| Administrateur | + application de matrices et modification de droits, restauration des droits, déverrouillage de quotas, fermeture de fichiers ouverts / sessions, arrêt, redémarrage et maintenance du service, purge définitive de la corbeille, suppression de clients, paramètres, utilisateurs, clés d'API, journal d'audit. |
 
 ## Intégration au centre de supervision (étape 2)
 
@@ -141,12 +222,16 @@ du centre de supervision peut consommer exactement les mêmes points d'accès.
   ```
   ```json
   {"status": "critical", "alerts": {"critical": 1, "warning": 2, "info": 0},
+   "service": {"status": "ok", "mode": "windows-service", "uptime_sec": 864000, "restarts": 1,
+               "availability_30d": 99.998, "maintenance": null, "components": {"scheduler": "ok", "…": "ok"}},
    "shares": [{"client": "ACME", "name": "Compta", "status": "critical", "size": 123456,
                "quota_pct": 97.2, "monitoring": "active",
                "alerts": [{"severity": "critical", "category": "ransomware", "title": "…"}]}]}
   ```
 - **Prometheus / Grafana** : `GET /metrics` (taille, fichiers, quota, disponibilité par
-  dossier, alertes ouvertes par gravité).
+  dossier, alertes ouvertes par gravité, durée de fonctionnement, état des composants).
+- **Sondes** sans authentification : `GET /api/health/live` (le processus répond) et
+  `GET /api/health/ready` (200 si planificateur et composants sains, 503 sinon).
 - **Webhook sortant** : `POST` JSON à chaque nouvelle alerte ou escalade, signé par
   `X-VigieFS-Signature: sha256=<HMAC-SHA256(corps, secret)>`.
 
@@ -156,18 +241,36 @@ du centre de supervision peut consommer exactement les mêmes points d'accès.
 
 1. Datto RMM › *Components* › *New Component* › catégorie **Monitors**, script PowerShell,
    collez le contenu du fichier.
-2. Déclarez les variables `VigieFSUrl`, `VigieFSApiKey` (clé *Lecture seule*) et
-   `AlertLevel` (`critical` ou `warning`).
+2. Déclarez les variables `VigieFSUrl`, `VigieFSApiKey` (clé *Lecture seule*),
+   `AlertLevel` (`critical` ou `warning`) et, si besoin, `VigieFSData` (dossier de données)
+   et `AlertOnPlannedStop` (`false` pour ne pas alerter sur un arrêt volontaire).
 3. Ajoutez le monitor à la politique du serveur hébergeant VigieFS : une alerte Datto
-   est levée dès que VigieFS signale un problème, avec le détail en diagnostic.
+   est levée dès que VigieFS signale un problème, qu'un composant du service est en erreur
+   ou que VigieFS est injoignable (état du service Windows, arrêt volontaire, dernières
+   lignes du journal en diagnostic). Pendant une maintenance déclarée, le monitor reste vert.
 
 ## Architecture
 
 ```
 vigiefs/
 ├── vigiefs/
+│   ├── __main__.py     Commandes serve / supervise / status / stop / restart / restore-db
+│   ├── service.py      Superviseur 24 h/24, arrêt volontaire, journal de disponibilité
+│   ├── guard.py        Garde interne : auto-réparation, battement de cœur, maintenance de la base
 │   ├── api.py          API REST FastAPI + service de l'interface
+│   ├── api_rights.py   API droits, matrice, architecture, quotas, SMB, santé, RGPD
+│   ├── api_service.py  API service : sondes, état, disponibilité, arrêt, maintenance
 │   ├── engine.py       Planificateur, analyses, règles proactives, rétention
+│   ├── acl.py          Relevé, audit et application des ACL NTFS / POSIX
+│   ├── rights.py       Relevés de droits, dérive, sauvegarde / restauration des ACL
+│   ├── matrix.py       Matrice de droits : AGDLP, plan d'écart, scripts, CSV / Excel
+│   ├── pathcheck.py    Longueur des chemins, nommage, conflits
+│   ├── structure.py    Note d'architecture et recommandations
+│   ├── quotas.py       Quotas souples / stricts, FSRM, verrouillage VigieFS
+│   ├── smb.py          Partages SMB / Samba, fichiers ouverts, sessions
+│   ├── health.py       Contrôles de santé Windows Server / Linux
+│   ├── sensitive.py    Données sensibles (RGPD)
+│   ├── system.py       PowerShell, commandes, capacités de l'hôte
 │   ├── jobs.py         Tâches de fond persistées (progression, annulation)
 │   ├── optimize.py     Fichiers inutiles, nettoyage, doublons
 │   ├── storage.py      Corbeille VigieFS, archivage à froid
@@ -182,18 +285,34 @@ vigiefs/
 │   ├── db.py           SQLite (WAL)
 │   └── static/         Interface web (HTML/CSS/JS natif en modules, aucune dépendance externe)
 ├── integrations/datto-rmm/VigieFS-Monitor.ps1
-├── scripts/install-windows.ps1
+├── scripts/install-windows.ps1    Service Windows (WinSW / NSSM / tâche + garde)
+├── scripts/install-linux.sh       Service systemd
+├── scripts/vigiefs.service
+├── start-vigiefs.bat, stop-vigiefs.bat
 └── tests/
 ```
 
-Toutes les données (base SQLite, journaux applicatifs) sont dans le dossier `--data`.
-**Sauvegardez ce dossier** (ex. avec Datto). L'interface fonctionne hors ligne : aucune
+Toutes les données (base SQLite, journaux applicatifs, sauvegardes de droits
+`sauvegardes-acl/`, sauvegardes de base `sauvegardes-base/`, état du service `run/`) sont dans
+le dossier `--data`. **Sauvegardez ce dossier** (ex. avec Datto). L'interface fonctionne hors ligne : aucune
 ressource n'est chargée depuis Internet.
 
 ## Limites connues
 
-- Les quotas sont **logiciels** : VigieFS alerte et prévoit, mais ne bloque pas l'écriture
-  (pour un blocage strict, combinez avec un quota FSRM / NTFS).
+- Les parties propres à Windows (collecte `Get-Acl`, icacls, FSRM, cmdlets SMB, AD, contrôles de
+  santé, service WinSW / NSSM) sont écrites d'après la documentation Microsoft mais testées ici
+  sur des jeux de données simulés : **validez-les sur un serveur de recette** avant production.
+  Le superviseur, la garde, les ACL POSIX, la matrice et les quotas sont testés de bout en bout
+  sous Linux.
+- Sans FSRM, le quota strict est appliqué par **verrouillage VigieFS** au contrôle suivant (toutes
+  les 15 min par défaut) : un dépassement est possible entre deux contrôles. Sous Linux, le
+  verrouillage passe par le masque ACL et empêche aussi la suppression ; préférez des quotas de
+  système de fichiers (XFS project quotas, ZFS) pour un blocage instantané.
+- Samba ne permet pas de fermer un fichier ouvert isolément (seule la session peut l'être).
+- La détection de données sensibles est **heuristique** (motifs + clés de contrôle) : elle aide
+  à prioriser, sans valeur de certification RGPD.
+- Le superviseur ne survit pas à l'arrêt du serveur lui-même : c'est le service système qui
+  relance VigieFS au démarrage ; une coupure brutale est journalisée comme « interruption ».
 - La surveillance temps réel d'un partage UNC distant dépend du serveur distant
   (notifications SMB) ; les analyses planifiées restent la source de vérité.
 - Le propriétaire NTFS n'est pas affiché (seules les ACL via `icacls`).
@@ -211,3 +330,30 @@ ressource n'est chargée depuis Internet.
 pip install -r requirements-dev.txt
 python -m pytest
 ```
+
+## Références
+
+Bonnes pratiques et limites prises en compte :
+
+- Droits NTFS et modèle AGDLP : [tenfold — NTFS permissions](https://www.tenfold-security.com/en/set-ntfs-permissions),
+  [Netwrix — NTFS permissions best practices](https://netwrix.com/en/resources/guides/ntfs-permissions-management-best-practices/),
+  [Active Directory Pro — NTFS best practices](https://activedirectorypro.com/ntfs-permissions-management-best-practices),
+  [Microsoft Tech Community — partages, NTFS et « Tout le monde »](https://techcommunity.microsoft.com/discussions/windowsserver/best-practices-sharing-folders-ntfsshare-permissions-and-the-everyone-permissiio/673125/replies/716094),
+  [Active Directory Pro — rapport NTFS](https://docs.activedirectorypro.com/tools/security/ntfs-report),
+  [NTFS Permissions Auditor — dépannage](https://albusbit.com/help/ntfs-permissions-auditor/troubleshooting.html),
+  [icacls (Microsoft Learn)](https://learn.microsoft.com/windows-server/administration/windows-commands/icacls),
+  [icacls — exemples](https://std.rocks/windows_icacls.html).
+- Chemins longs et nommage : [WOSHub — limite MAX_PATH](https://woshub.com/max-path-length-limit-windows),
+  [West Wind — chemins longs dans les applications Windows](https://weblog.west-wind.com/posts/2022/Jan/03/Integrating-Long-Path-Names-in-Windows-Applications),
+  [Microsoft — restrictions OneDrive et SharePoint](https://support.microsoft.com/office/restrictions-and-limitations-in-onedrive-and-sharepoint-64883a5d-228e-48f5-b3d2-eb39e07630fa).
+- Quotas et filtrage FSRM : [AWS FSx — gestion des quotas FSRM](https://docs.aws.amazon.com/fsx/latest/WindowsGuide/fsrm-quota-management.html),
+  [AWS FSx — rapports FSRM](https://docs.aws.amazon.com/fsx/latest/WindowsGuide/fsrm-storage-reports.html),
+  [Set-FsrmFileScreen (Microsoft)](https://technet.microsoft.com/itpro/powershell/windows/fileserverresourcemanager/set-fsrmfilescreen).
+- Partages SMB : [WOSHub — gérer les partages en PowerShell](https://woshub.com/manage-windows-file-shares-with-powershell/),
+  [Get-SmbServerConfiguration (Microsoft Learn)](https://learn.microsoft.com/it-it/powershell/module/smbshare/get-smbserverconfiguration),
+  [smbstatus (Samba)](https://manpages.ubuntu.com/manpages/jammy/man1/smbstatus.1.html).
+- Données sensibles : [composition du numéro de sécurité sociale](https://www.aide-sociale.fr/composition-numero-securite-sociale/),
+  [Varonis — Data Risk Report](https://info.varonis.com/hubfs/docs/research_reports/2017-data-risk-report.pdf).
+- Fonctionnement en service : [WinSW](https://github.com/winsw/winsw), [NSSM](https://nssm.cc),
+  [systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html),
+  [sd_notify](https://www.freedesktop.org/software/systemd/man/latest/sd_notify.html).

@@ -80,7 +80,11 @@ def default_options():
 def _slug(text, limit=24):
     text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     text = re.sub(r"[^A-Za-z0-9]+", "_", text).strip("_").upper()
-    return text[:limit].strip("_") or "X"
+    if len(text) > limit:
+        # Coupe sur une frontière de mot (« CABINET_MARTIN » plutôt que « CABINET_MARTIN_A »).
+        cut = text[:limit + 1].rsplit("_", 1)[0]
+        text = cut if len(cut) >= limit // 2 else text[:limit]
+    return text.strip("_") or "X"
 
 
 def group_name(prefix, client, share, path, access, platform):
@@ -124,19 +128,24 @@ def propose(snapshot, depth, client, share_name, prefix="GDL"):
             rw = group_name(prefix, client, share_name, n["path"], "RW", platform)
             ro = group_name(prefix, client, share_name, n["path"], "RO", platform)
             owners[n["path"]] = (rw, ro)
-            members_rw, members_ro, review = [], [], []
+            members = {"RW": [], "RO": []}
+            review = {"RW": [], "RO": []}
             for p, lv in acl.effective_levels(n).items():
                 if p in admins or acl.is_admin(p) or lv in ("none", "list"):
                     continue
                 if snapshot["principals"].get(p, {}).get("type") == "orphan":
                     continue
+                side = "RW" if LEVEL_RANK[lv] >= LEVEL_RANK["write"] else "RO"
+                if platform == "posix" and not p.startswith("user:"):
+                    # Un groupe POSIX ne contient que des comptes : « other » et les groupes sont à revoir.
+                    review[side].append(p)
+                    continue
+                members[side].append(p)
                 if acl.is_broad(p):
-                    review.append(p)
-                target = members_rw if LEVEL_RANK[lv] >= LEVEL_RANK["write"] else members_ro
-                target.append(p)
-            for g, members, access in ((rw, members_rw, "modification"), (ro, members_ro, "lecture")):
-                plan.append({"group": g, "members": sorted(set(members)), "access": access, "path": n["path"],
-                             "review": sorted(set(review) & set(members)), "create": True})
+                    review[side].append(p)
+            for g, side, access in ((rw, "RW", "modification"), (ro, "RO", "lecture")):
+                plan.append({"group": g, "members": sorted(set(members[side])), "access": access, "path": n["path"],
+                             "review": sorted(set(review[side])), "create": True})
                 columns.append(g)
             cells[key(n["path"], rw)] = "modify"
             cells[key(n["path"], ro)] = "read"

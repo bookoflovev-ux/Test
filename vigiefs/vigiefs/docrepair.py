@@ -858,7 +858,7 @@ def _libreoffice_convert(path, out_dir, target_ext, lo):
         profile = "file:///" + os.path.join(work, "profil").replace("\\", "/").lstrip("/")
         cmd = [lo, f"-env:UserInstallation={profile}", "--headless", "--norestore", "--nolockcheck",
                "--convert-to", target_ext, "--outdir", work, path]
-        subprocess.run(cmd, capture_output=True, timeout=180)
+        subprocess.run(cmd, capture_output=True, timeout=180, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         produced = os.path.join(work, os.path.splitext(os.path.basename(path))[0] + "." + target_ext)
         if not os.path.isfile(produced) or os.path.getsize(produced) == 0:
             return None

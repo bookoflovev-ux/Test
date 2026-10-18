@@ -7,8 +7,10 @@ import shutil
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 
 from .config import merged_setting
+from .guard import Guard
 from .jobs import JobManager
 from .monitor import Monitor
 from .optimize import JunkClassifier
@@ -54,22 +56,53 @@ class Engine:
         self._thread = None
         self._last_purge = 0
         self.started_at = time.time()
+        self.last_tick_done_at = None
+        self.stopping = False
+        # Sondes d'accès aux dossiers dans des threads dédiés : un partage réseau qui ne répond plus
+        # (UNC, NAS) ne peut pas bloquer le planificateur.
+        self.probes = ThreadPoolExecutor(max_workers=4, thread_name_prefix="vigiefs-sonde")
+        self._pending_probes = {}
+        self.guard = Guard(self, self.data_dir)
 
     # --- cycle de vie ---
     def start(self):
+        # Les dossiers sont mis sous surveillance au premier cycle du planificateur, après une sonde
+        # d'accès à délai limité : un partage réseau absent ne retarde pas le démarrage.
         self.monitor.start()
-        for share in self.shares():
-            self.monitor.watch(share)
-        self._thread = threading.Thread(target=self._loop, name="vigiefs-scheduler", daemon=True)
-        self._thread.start()
+        self.guard.start()
+        self.restart_scheduler()
 
     def stop(self):
+        self.stopping = True
         self._stop.set()
+        self.guard.stop()
         for job in list(self.running.values()):
             job["cancel"].set()
         self.monitor.stop()
         self.jobs.shutdown()
         self.executor.shutdown(wait=False, cancel_futures=True)
+        self.probes.shutdown(wait=False, cancel_futures=True)
+        try:
+            self.db.checkpoint()
+        except Exception:  # noqa: BLE001
+            log.warning("Point de contrôle final de la base impossible")
+
+    def scheduler_alive(self):
+        return bool(self._thread and self._thread.is_alive())
+
+    def restart_scheduler(self):
+        """(Re)lance le thread du planificateur s'il n'est pas actif (appelé par la garde)."""
+        if self.scheduler_alive() or self._stop.is_set():
+            return False
+        self._thread = threading.Thread(target=self._loop, name="vigiefs-scheduler", daemon=True)
+        self._thread.start()
+        return True
+
+    # --- mode maintenance : actions planifiées suspendues, supervision temps réel maintenue ---
+    def maintenance(self):
+        m = self.db.get_setting("maintenance", {}) or {}
+        until = m.get("until") or 0
+        return m if until and until > time.time() else None
 
     def shares(self):
         return self.db.query("SELECT * FROM shares ORDER BY id")
@@ -84,11 +117,17 @@ class Engine:
                 self.tick()
             except Exception:  # noqa: BLE001
                 log.exception("Erreur du planificateur")
-            tick = int(merged_setting(self.db, "general").get("scheduler_tick_sec", 30))
+            self.last_tick_done_at = time.time()
+            try:
+                tick = int(merged_setting(self.db, "general").get("scheduler_tick_sec", 30))
+            except Exception:  # noqa: BLE001
+                tick = 30
             self._stop.wait(max(5, tick))
 
     def tick(self):
         now = time.time()
+        if self.maintenance():
+            return
         for share in self.shares():
             available = self.check_availability(share)
             if available and not self.monitor.is_active(share["id"]) and share["monitor_enabled"]:
@@ -115,21 +154,52 @@ class Engine:
             self.purge()
             self._last_purge = now
 
+    @staticmethod
+    def _probe_path(path):
+        if not os.path.isdir(path):
+            return False, None
+        try:
+            return True, shutil.disk_usage(path)
+        except OSError:
+            return True, None
+
+    def _probe(self, share):
+        """(accessible, usage disque, délai dépassé) avec un délai maximal par sonde."""
+        timeout = float(merged_setting(self.db, "service").get("probe_timeout_sec", 20))
+        fut = self._pending_probes.get(share["id"])
+        if fut is None or fut.done():
+            try:
+                fut = self.probes.submit(self._probe_path, share["path"])
+            except RuntimeError:  # arrêt en cours
+                return False, None, False
+            self._pending_probes[share["id"]] = fut
+        else:
+            timeout = 0.5  # sonde précédente toujours bloquée : inutile d'attendre à nouveau
+        try:
+            ok, du = fut.result(timeout=timeout)
+        except FutureTimeout:
+            return False, None, True
+        except Exception:  # noqa: BLE001
+            return False, None, False
+        return ok, du, False
+
     def check_availability(self, share):
         """Vérifie l'accès au dossier et l'espace libre du volume ; lève/résout les alertes."""
         fp = f"path:{share['id']}"
-        if not os.path.isdir(share["path"]):
+        ok, du, timed_out = self._probe(share)
+        if not ok:
             self.alerts.raise_alert(
                 fp, "critical", "path", "Dossier inaccessible",
-                f"Le dossier « {share['name']} » ({share['path']}) est introuvable ou inaccessible. "
-                "Vérifiez le volume, le partage réseau et les droits du compte de service.",
-                share=share)
+                f"Le dossier « {share['name']} » ({share['path']}) "
+                + ("ne répond pas (délai dépassé : partage réseau ou volume bloqué). " if timed_out else
+                   "est introuvable ou inaccessible. ")
+                + "Vérifiez le volume, le partage réseau et les droits du compte de service.",
+                share=share, details={"timeout": timed_out})
             return False
         self.alerts.resolve(fp)
         warn_pct = share.get("disk_free_warn_pct") or 0
-        if warn_pct > 0:
+        if warn_pct > 0 and du is not None:
             try:
-                du = shutil.disk_usage(share["path"])
                 free_pct = du.free * 100.0 / du.total if du.total else 100
                 fpd = f"disk:{share['id']}"
                 if free_pct < warn_pct:

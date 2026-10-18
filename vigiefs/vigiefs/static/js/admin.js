@@ -1,7 +1,7 @@
 /* VigieFS — administration : paramètres, utilisateurs, clés d'API, audit, tâches */
 'use strict';
 
-const SETTINGS_TABS = [['account', 'Mon compte', 'viewer'], ['general', 'Général', 'admin'], ['notifications', 'Notifications', 'admin'], ['security', 'Sécurité & filtrage', 'admin'], ['storage', 'Stockage & réparation', 'admin'], ['retention', 'Prévisions & rétention', 'admin'], ['users', 'Utilisateurs', 'admin'], ['apikeys', "Clés d'API", 'admin'], ['audit', "Journal d'audit", 'admin'], ['integration', 'Intégration & système', 'viewer']];
+const SETTINGS_TABS = [['account', 'Mon compte', 'viewer'], ['general', 'Général', 'admin'], ['notifications', 'Notifications', 'admin'], ['security', 'Sécurité & filtrage', 'admin'], ['storage', 'Stockage & réparation', 'admin'], ['compliance', 'Droits, chemins & quotas', 'admin'], ['retention', 'Prévisions & rétention', 'admin'], ['users', 'Utilisateurs', 'admin'], ['apikeys', "Clés d'API", 'admin'], ['audit', "Journal d'audit", 'admin'], ['integration', 'Intégration & système', 'viewer']];
 const listToText = l => (Array.isArray(l) ? l.join(', ') : l || '');
 const textToList = t => t.split(/[,;\n]/).map(x => x.trim()).filter(Boolean);
 
@@ -84,6 +84,40 @@ async function viewSettings(view, query, tab) {
     onSubmit('f-ar', d => save('archive', d));
     onSubmit('f-cl', d => save('cleanup', d));
     onSubmit('f-rp', d => save('repair', d));
+  }
+  if (tab === 'compliance') {
+    const p = st.paths; const r = st.rights; const q = st.quotas; const sv = st.sensitive;
+    pane.innerHTML = formCard('Longueur des chemins et nommage', `<div class="form-grid cols-3">
+      ${field("Seuil d'avertissement (caractères)", inp('warn_len', p.warn_len, 'number', 'min="50"'))}
+      ${field('Seuil critique (MAX_PATH)', inp('crit_len', p.crit_len, 'number', 'min="50"'), 'Windows : 260 caractères.')}
+      ${field('Limite OneDrive / SharePoint', inp('cloud_len', p.cloud_len, 'number', 'min="100"'), 'Microsoft : 400 caractères.')}
+      ${field('Longueur maximale d\'un nom', inp('name_max', p.name_max, 'number', 'min="10"'))}
+      ${field('Profondeur recommandée (niveaux)', inp('max_depth', p.max_depth, 'number', 'min="2"'))}
+      ${field('Dossier surchargé au-delà de (éléments)', inp('crowded_items', p.crowded_items, 'number', 'min="100"'))}
+      ${field('Profondeur des statistiques d\'architecture', inp('arch_depth', p.arch_depth, 'number', 'min="1" max="8"'))}
+      <div class="field">${chk('check_cloud', 'Contrôler la compatibilité OneDrive / SharePoint', p.check_cloud)}</div>
+      <div class="field">${chk('realtime_alert', 'Alerter en temps réel à la création d\'un chemin trop long', p.realtime_alert)}</div></div>`, 'f-paths') +
+      formCard("Droits d'accès", `<div class="form-grid">
+      ${field('Préfixe des groupes proposés', inp('group_prefix', r.group_prefix), 'Ex. GDL → GDL_CLIENT_PARTAGE_DOSSIER_RW / _RO.')}
+      ${field('Unité d\'organisation par défaut (AD)', inp('groups_ou', r.groups_ou, 'text', 'placeholder="OU=Groupes,DC=client,DC=local"'))}
+      <div class="field full">${chk('scheduled_scans', 'Analyses des droits planifiées (détection des modifications)', r.scheduled_scans)}</div></div>`, 'f-rights') +
+      formCard('Quotas', `<div class="form-grid">
+      ${field('Contrôle des quotas stricts (minutes)', inp('check_interval_min', q.check_interval_min, 'number', 'min="1"'))}
+      ${field('Déverrouillage sous (%)', inp('unlock_below_pct', q.unlock_below_pct, 'number', 'min="50" max="100"'), 'Évite les verrouillages / déverrouillages répétés.')}
+      ${field('Modèles de quota', `<textarea name="templates" style="min-height:160px">${esc((q.templates || []).map(t => `${t.name} ; ${t.limit_gb} ; ${t.mode === 'hard' ? 'strict' : 'souple'} ; ${t.warn_pct} ; ${t.crit_pct}`).join('\n'))}</textarea>`, 'Une ligne par modèle : nom ; limite en Go ; strict|souple ; seuil avertissement % ; seuil critique %', true)}</div>`, 'f-quotas') +
+      formCard('Données sensibles (RGPD)', `<div class="form-grid">
+      ${field('Taille maximale lue par fichier (Mo)', inp('max_file_mb', sv.max_file_mb, 'number', 'min="1"'))}
+      ${field('Extensions analysées', `<textarea name="extensions">${esc(listToText(sv.extensions))}</textarea>`, '', true)}</div>`, 'f-sens');
+    onSubmit('f-paths', d => save('paths', d));
+    onSubmit('f-rights', d => save('rights', d));
+    onSubmit('f-quotas', d => {
+      const templates = d.templates.split('\n').map(l => l.split(';').map(x => x.trim())).filter(x => x[0]).map(([name, gb, mode, w, c]) => {
+        if (!(Number(String(gb).replace(',', '.')) > 0)) throw new Error(`Limite invalide pour « ${name} »`);
+        return { name, limit_gb: Number(String(gb).replace(',', '.')), mode: /strict|hard/i.test(mode || '') ? 'hard' : 'soft', warn_pct: Number(w) || 85, crit_pct: Number(c) || 95 };
+      });
+      return save('quotas', { check_interval_min: d.check_interval_min, unlock_below_pct: d.unlock_below_pct, templates });
+    });
+    onSubmit('f-sens', d => save('sensitive', { max_file_mb: d.max_file_mb, extensions: textToList(d.extensions) }));
   }
   if (tab === 'retention') {
     const f = st.forecast; const r = st.retention;

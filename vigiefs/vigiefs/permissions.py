@@ -48,7 +48,8 @@ def read_permissions(path):
     if sys.platform.startswith("win"):
         try:
             res = subprocess.run(["icacls", path], capture_output=True, text=True, timeout=20,
-                                 encoding="oem", errors="replace")  # console Windows = page OEM
+                                 encoding="oem", errors="replace",  # console Windows = page OEM
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except (OSError, subprocess.SubprocessError) as exc:
             return {"platform": "windows", "error": str(exc), "entries": []}
         if res.returncode != 0:

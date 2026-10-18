@@ -39,7 +39,7 @@ async function viewClients(view) {
 
 // ------------------------------------------------------------------ dossiers supervisés
 const INTERVALS = [[0, 'Désactivée (manuelle)'], [60, 'Toutes les heures'], [180, 'Toutes les 3 h'], [360, 'Toutes les 6 h'], [720, 'Toutes les 12 h'], [1440, 'Quotidienne'], [10080, 'Hebdomadaire']];
-const SHARE_DEFAULTS = { quota_warn_pct: 80, quota_crit_pct: 95, scan_interval_min: 360, stale_days: 365, disk_free_warn_pct: 10, monitor_enabled: 1, screening_enabled: 1, screening_action: 'alert', quota_bytes: 0, archive_enabled: 0, archive_age_days: 730, archive_min_size_kb: 0, archive_extensions: '', archive_exclude: '', archive_criterion: 'mtime', archive_stub: 1, archive_interval_days: 30 };
+const SHARE_DEFAULTS = { quota_warn_pct: 80, quota_crit_pct: 95, scan_interval_min: 360, stale_days: 365, disk_free_warn_pct: 10, monitor_enabled: 1, screening_enabled: 1, screening_action: 'alert', quota_bytes: 0, archive_enabled: 0, archive_age_days: 730, archive_min_size_kb: 0, archive_extensions: '', archive_exclude: '', archive_criterion: 'mtime', archive_stub: 1, archive_interval_days: 30, access_path: '', acl_depth: 4, acl_interval_h: 24, matrix_depth: 2 };
 
 function shareForm(s, clients) {
   s = Object.assign({}, SHARE_DEFAULTS, s || {});
@@ -66,6 +66,12 @@ function shareForm(s, clients) {
       ${field('Action', sel('screening_action', [['alert', 'Alerter uniquement'], ['quarantine', 'Alerter et mettre en quarantaine']], s.screening_action), 'La quarantaine nécessite un dossier configuré (Paramètres › Sécurité).')}
       ${field('Extensions bloquées', `<textarea name="blocked_extensions" placeholder="Vide = liste par défaut">${esc(s.blocked_extensions || '')}</textarea>`, 'Séparées par des virgules, ex. .exe, .mp4, .iso', true)}
     </div></fieldset>
+    <fieldset><legend>Droits et chemins</legend><div class="form-grid">
+      ${field('Chemin utilisé par les utilisateurs', inp('access_path', s.access_path, 'text', 'placeholder="ex. \\\\SRV-FS01\\Compta ou P:\\"'), 'Sert à calculer la longueur réelle des chemins (lecteur réseau, partage UNC). Vide = chemin local.', true)}
+      ${field('Profondeur d\'analyse des droits', inp('acl_depth', s.acl_depth, 'number', 'min="0" max="8"'), 'Niveaux de dossiers dont les ACL sont lues.')}
+      ${field('Analyse des droits (heures)', inp('acl_interval_h', s.acl_interval_h, 'number', 'min="0"'), '0 = manuelle. Détecte les modifications de droits.')}
+      ${field('Profondeur de la matrice', inp('matrix_depth', s.matrix_depth, 'number', 'min="0" max="6"'), 'Bonne pratique : droits définis sur 2 niveaux, héritage en dessous.')}
+    </div></fieldset>
     <fieldset><legend>Archivage à froid automatique</legend>${archivePolicyFields(s)}</fieldset></div>`;
 }
 function archivePolicyFields(s, wide = false) {
@@ -85,8 +91,8 @@ function shareBody(f, base = {}) {
   if ('quota_gb' in d) { d.quota_bytes = Math.round((d.quota_gb || 0) * GB); delete d.quota_gb; }
   d.scan_interval_min = Number(d.scan_interval_min);
   for (const k of ['monitor_enabled', 'screening_enabled', 'archive_enabled', 'archive_stub']) d[k] = !!d[k];
-  for (const k of ['quota_warn_pct', 'quota_crit_pct', 'stale_days', 'disk_free_warn_pct', 'archive_min_size_kb']) d[k] = d[k] ?? 0;
-  const keep = ['client_id', 'name', 'path', 'description', 'quota_bytes', 'quota_warn_pct', 'quota_crit_pct', 'screening_enabled', 'screening_action', 'blocked_extensions', 'monitor_enabled', 'scan_interval_min', 'stale_days', 'disk_free_warn_pct', 'archive_enabled', 'archive_age_days', 'archive_min_size_kb', 'archive_extensions', 'archive_exclude', 'archive_criterion', 'archive_stub', 'archive_interval_days'];
+  for (const k of ['quota_warn_pct', 'quota_crit_pct', 'stale_days', 'disk_free_warn_pct', 'archive_min_size_kb', 'acl_depth', 'acl_interval_h', 'matrix_depth']) d[k] = d[k] ?? 0;
+  const keep = ['client_id', 'name', 'path', 'description', 'quota_bytes', 'quota_warn_pct', 'quota_crit_pct', 'screening_enabled', 'screening_action', 'blocked_extensions', 'monitor_enabled', 'scan_interval_min', 'stale_days', 'disk_free_warn_pct', 'archive_enabled', 'archive_age_days', 'archive_min_size_kb', 'archive_extensions', 'archive_exclude', 'archive_criterion', 'archive_stub', 'archive_interval_days', 'access_path', 'acl_depth', 'acl_interval_h', 'matrix_depth'];
   return Object.fromEntries(keep.map(k => [k, d[k] ?? '']));
 }
 async function openShareForm(share, onDone, presetClient) {
@@ -155,7 +161,7 @@ async function viewShares(view, query) {
 }
 
 // ------------------------------------------------------------------ fiche d'un dossier
-const SHARE_TABS = [['overview', "Vue d'ensemble", 'dashboard'], ['report', 'Stockage', 'report'], ['cleanup', 'Nettoyage', 'broom'], ['duplicates', 'Doublons', 'copy'], ['archive', 'Archivage', 'archive'], ['integrity', 'Intégrité', 'shield'], ['explorer', 'Explorateur', 'folder'], ['activity', 'Activité', 'activity'], ['alerts', 'Alertes', 'bell']];
+const SHARE_TABS = [['overview', "Vue d'ensemble", 'dashboard'], ['report', 'Stockage', 'report'], ['architecture', 'Architecture', 'list'], ['rights', 'Droits', 'lock'], ['quotas', 'Quotas', 'disk'], ['cleanup', 'Nettoyage', 'broom'], ['duplicates', 'Doublons', 'copy'], ['archive', 'Archivage', 'archive'], ['integrity', 'Intégrité', 'shield'], ['explorer', 'Explorateur', 'folder'], ['activity', 'Activité', 'activity'], ['alerts', 'Alertes', 'bell']];
 
 async function viewShare(view, query, id, tab = 'overview') {
   let s = await api(`/api/shares/${id}`);
@@ -174,7 +180,7 @@ async function viewShare(view, query, id, tab = 'overview') {
   }));
   view.innerHTML = `<nav class="tabs">${SHARE_TABS.map(([k, l, ic]) => `<a href="#/share/${id}/${k}" class="${k === tab ? 'active' : ''}">${icon(ic)}${l}</a>`).join('')}</nav><div id="tab"></div>`;
   const pane = $('#tab', view);
-  const fn = { overview: shareOverview, report: shareReport, cleanup: shareCleanup, duplicates: shareDuplicates, archive: shareArchive, integrity: shareIntegrity, explorer: shareExplorer, activity: shareActivity, alerts: shareAlerts }[tab] || shareOverview;
+  const fn = { overview: shareOverview, report: shareReport, architecture: shareArchitecture, rights: shareRights, quotas: shareQuotas, cleanup: shareCleanup, duplicates: shareDuplicates, archive: shareArchive, integrity: shareIntegrity, explorer: shareExplorer, activity: shareActivity, alerts: shareAlerts }[tab] || shareOverview;
   await fn(pane, s, query);
   every(4000, guard(async () => {
     const was = s.scan_running;
