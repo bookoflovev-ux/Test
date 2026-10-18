@@ -1,6 +1,5 @@
 """Analyse complète d'un dossier supervisé : volumétrie, typologie, âge, filtrage, rançongiciel."""
 
-import hashlib
 import heapq
 import os
 import shutil
@@ -33,7 +32,7 @@ def _is_junction(entry):
 
 
 def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_notes=None,
-              progress=None, cancel=None):
+              progress=None, cancel=None, junk=None, skip_roots=()):
     """Parcourt `root` (sans suivre les liens) et renvoie un rapport agrégé (dict)."""
     screening = screening or Matcher()
     ransom_ext = ransom_ext or Matcher()
@@ -51,6 +50,9 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
     top_dirs = defaultdict(lambda: [0, 0])
     screened, ransom = [], []
     newest_mtime = 0
+    junk_stats = defaultdict(lambda: {"count": 0, "size": 0, "samples": []})
+    empty_dirs = {"count": 0, "samples": []}
+    skip_real = [os.path.realpath(r) for r in skip_roots if r]
 
     stack = [root_real]
     while stack:
@@ -65,11 +67,15 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
                 errors.append({"path": relpath(root_real, current), "error": exc.strerror or str(exc)})
             continue
         with it:
+            has_entries = False
             for entry in it:
+                has_entries = True
                 try:
                     if entry.is_symlink() or _is_junction(entry):
                         continue
                     if entry.is_dir(follow_symlinks=False):
+                        if os.path.realpath(entry.path) in skip_real:
+                            continue
                         dir_count += 1
                         stack.append(entry.path)
                         continue
@@ -121,8 +127,21 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
                     ransom.append({"path": rel, "size": size, "mtime": mtime,
                                    "kind": "note" if ransom_notes.match(name) else "extension"})
 
+                if junk is not None:
+                    cat = junk.classify(name, size, mtime)
+                    if cat:
+                        js = junk_stats[cat]
+                        js["count"] += 1
+                        js["size"] += size
+                        if len(js["samples"]) < 100:
+                            js["samples"].append({"path": rel, "size": size, "mtime": mtime})
+
                 if progress is not None and file_count % 500 == 0:
                     progress.update(file_count=file_count, total_size=total_size)
+        if not has_entries and current != root_real:
+            empty_dirs["count"] += 1
+            if len(empty_dirs["samples"]) < 100:
+                empty_dirs["samples"].append({"path": relpath(root_real, current)})
 
     def files(heap):
         return [{"path": p, "size": s, "mtime": m} for s, p, m in sorted(heap, reverse=True)]
@@ -159,74 +178,11 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
         "screened": screened,
         "ransomware": ransom,
         "disk": disk,
+        "junk": {k: v for k, v in junk_stats.items()},
+        "junk_total": {"count": sum(v["count"] for v in junk_stats.values()),
+                       "size": sum(v["size"] for v in junk_stats.values())},
+        "empty_dirs": empty_dirs,
     }
-
-
-def find_duplicates(root, min_size=1024 * 1024, max_groups=200, cancel=None):
-    """Doublons : regroupement par taille, puis empreinte partielle, puis SHA-256 complet."""
-    root_real = os.path.realpath(root)
-    by_size = defaultdict(list)
-    for dirpath, dirnames, filenames in os.walk(root_real):
-        if cancel is not None and cancel.is_set():
-            raise ScanCancelled()
-        dirnames[:] = [d for d in dirnames if not os.path.islink(os.path.join(dirpath, d))]
-        for fn in filenames:
-            p = os.path.join(dirpath, fn)
-            try:
-                if os.path.islink(p):
-                    continue
-                size = os.path.getsize(p)
-            except OSError:
-                continue
-            if size >= min_size:
-                by_size[size].append(p)
-
-    def digest(path, limit=None):
-        h = hashlib.sha256()
-        read = 0
-        with open(path, "rb") as fh:
-            while True:
-                chunk = fh.read(1024 * 1024)
-                if not chunk:
-                    break
-                h.update(chunk)
-                read += len(chunk)
-                if limit and read >= limit:
-                    break
-        return h.hexdigest()
-
-    groups = []
-    for size, paths in sorted(by_size.items(), reverse=True):
-        if len(paths) < 2:
-            continue
-        partial = defaultdict(list)
-        for p in paths:
-            try:
-                partial[digest(p, 64 * 1024)].append(p)
-            except OSError:
-                continue
-        for candidates in partial.values():
-            if len(candidates) < 2:
-                continue
-            full = defaultdict(list)
-            for p in candidates:
-                if cancel is not None and cancel.is_set():
-                    raise ScanCancelled()
-                try:
-                    full[digest(p)].append(p)
-                except OSError:
-                    continue
-            for h, same in full.items():
-                if len(same) > 1:
-                    groups.append({
-                        "hash": h, "size": size, "count": len(same),
-                        "wasted": size * (len(same) - 1),
-                        "files": [relpath(root_real, p) for p in same],
-                    })
-        if len(groups) >= max_groups:
-            break
-    groups.sort(key=lambda g: g["wasted"], reverse=True)
-    return {"groups": groups[:max_groups], "wasted_total": sum(g["wasted"] for g in groups)}
 
 
 def quarantine_file(root, rel_path, quarantine_dir, tag):

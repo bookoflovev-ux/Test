@@ -12,7 +12,8 @@ from vigiefs.api import create_app  # noqa: E402
 from vigiefs.db import Database  # noqa: E402
 from vigiefs.engine import Engine  # noqa: E402
 from vigiefs.rules import Matcher, growth_per_day, normalize_extensions, quota_state, safe_join  # noqa: E402
-from vigiefs.scanner import find_duplicates, scan_tree  # noqa: E402
+from vigiefs.optimize import find_duplicates  # noqa: E402
+from vigiefs.scanner import scan_tree  # noqa: E402
 
 PASSWORD = "Sup3r-Secret!"
 
@@ -98,10 +99,10 @@ def test_find_duplicates(tmp_path):
     for name in ("a.bin", "sous/b.bin"):
         write(str(tmp_path / name), 2048)
     write(str(tmp_path / "c.bin"), 4096)
-    res = find_duplicates(str(tmp_path), min_size=1024)
+    res = find_duplicates([{"id": 1, "name": "P", "path": str(tmp_path)}], min_size=1024)
     assert len(res["groups"]) == 1
     assert res["wasted_total"] == 2048
-    assert sorted(res["groups"][0]["files"]) == ["a.bin", "sous/b.bin"]
+    assert sorted(f["path"] for f in res["groups"][0]["files"]) == ["a.bin", "sous/b.bin"]
 
 
 # ------------------------------------------------------------------ alertes & moteur

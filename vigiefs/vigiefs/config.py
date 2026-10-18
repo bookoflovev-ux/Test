@@ -71,6 +71,24 @@ DEFAULT_SETTINGS = {
         "scheduler_tick_sec": 30,
         "session_hours": 12,
     },
+    "recycle": {
+        "dir": "",
+        "retention_days": 30,
+    },
+    "archive": {
+        "root": "",
+        "verify_hash": True,
+    },
+    "cleanup": {
+        "temp_days": 2,
+        "backup_days": 30,
+        "logs_days": 90,
+        "empty_days": 7,
+    },
+    "repair": {
+        "libreoffice_path": "",
+        "max_size_mb": 300,
+    },
 }
 
 SEVERITY_ORDER = {"info": 0, "warning": 1, "critical": 2}

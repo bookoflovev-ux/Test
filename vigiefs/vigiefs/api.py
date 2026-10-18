@@ -26,7 +26,11 @@ from .db import Database
 from .engine import Engine
 from .permissions import read_permissions
 from .rules import normalize_extensions, quota_state, safe_join
-from .scanner import ScanCancelled, find_duplicates
+from . import docrepair
+from .integrity import STATUS_LABEL, integrity_scan, repair_in_share, repair_upload
+from .jobs import JOB_LABELS
+from .optimize import CATEGORY_KEYS, EMPTY_DIRS, JUNK_CATEGORIES, find_duplicates, resolve_duplicates, run_cleanup
+from .storage import share_policy
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 SESSION_COOKIE = "vigiefs_session"
@@ -68,6 +72,54 @@ class ShareIn(BaseModel):
     scan_interval_min: int = Field(360, ge=0)
     stale_days: int = Field(365, ge=0)
     disk_free_warn_pct: int = Field(10, ge=0, le=99)
+    archive_enabled: bool = False
+    archive_age_days: int = Field(730, ge=1)
+    archive_min_size_kb: int = Field(0, ge=0)
+    archive_extensions: str = ""
+    archive_exclude: str = ""
+    archive_criterion: str = Field("mtime", pattern="^(mtime|atime)$")
+    archive_stub: bool = True
+    archive_interval_days: int = Field(30, ge=1)
+
+
+SHARE_FIELDS = ["client_id", "name", "path", "description", "quota_bytes", "quota_warn_pct", "quota_crit_pct",
+                "screening_enabled", "screening_action", "blocked_extensions", "monitor_enabled",
+                "scan_interval_min", "stale_days", "disk_free_warn_pct", "archive_enabled", "archive_age_days",
+                "archive_min_size_kb", "archive_extensions", "archive_exclude", "archive_criterion",
+                "archive_stub", "archive_interval_days"]
+
+
+class CleanupIn(BaseModel):
+    categories: List[str]
+
+
+class DuplicatesIn(BaseModel):
+    min_size_mb: float = Field(1.0, ge=0)
+
+
+class ResolveIn(BaseModel):
+    strategy: str = Field("oldest", pattern="^(oldest|newest|shortest)$")
+    hashes: Optional[List[str]] = None
+    keep: dict = {}
+
+
+class ArchivePolicyIn(BaseModel):
+    age_days: Optional[int] = Field(None, ge=1)
+    min_size_kb: Optional[int] = Field(None, ge=0)
+    extensions: Optional[str] = None
+    exclude: Optional[str] = None
+    criterion: Optional[str] = Field(None, pattern="^(mtime|atime)$")
+    stub: Optional[bool] = None
+
+
+class RepairIn(BaseModel):
+    path: str = Field(min_length=1)
+    mode: str = Field("copy", pattern="^(copy|replace)$")
+
+
+class RepairBatchIn(BaseModel):
+    paths: List[str]
+    mode: str = Field("copy", pattern="^(copy|replace)$")
 
 
 class PathIn(BaseModel):
@@ -142,10 +194,10 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
     os.makedirs(data_dir, exist_ok=True)
     db = Database(os.path.join(data_dir, "vigiefs.db"))
     alerts = AlertManager(db)
-    engine = (engine_factory or Engine)(db, alerts)
+    engine = (engine_factory or Engine)(db, alerts, data_dir=data_dir)
+    jobs, recycle, archive = engine.jobs, engine.recycle, engine.archive
     auth = AuthService(db)
     throttle = LoginThrottle()
-    duplicate_jobs = {}
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -382,10 +434,13 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
             raise HTTPException(400, "Le chemin doit être absolu (ex. D:\\Partages\\Client ou \\\\serveur\\partage)")
         if body.quota_crit_pct < body.quota_warn_pct:
             raise HTTPException(400, "Le seuil critique doit être supérieur ou égal au seuil d'avertissement")
-        return (body.client_id, body.name.strip(), path, body.description, body.quota_bytes,
-                body.quota_warn_pct, body.quota_crit_pct, int(body.screening_enabled),
-                body.screening_action, ", ".join(normalize_extensions(body.blocked_extensions)),
-                int(body.monitor_enabled), body.scan_interval_min, body.stale_days, body.disk_free_warn_pct)
+        values = body.model_dump()
+        values.update(name=body.name.strip(), path=path,
+                      blocked_extensions=", ".join(normalize_extensions(body.blocked_extensions)),
+                      archive_extensions=", ".join(normalize_extensions(body.archive_extensions)))
+        for k in ("screening_enabled", "monitor_enabled", "archive_enabled", "archive_stub"):
+            values[k] = int(values[k])
+        return tuple(values[f] for f in SHARE_FIELDS)
 
     @app.get("/api/shares")
     def list_shares(client_id: Optional[int] = None, user=Depends(viewer)):
@@ -403,10 +458,8 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
         values = _share_values(body)
         try:
             sid = db.execute(
-                "INSERT INTO shares(client_id, name, path, description, quota_bytes, quota_warn_pct, "
-                "quota_crit_pct, screening_enabled, screening_action, blocked_extensions, "
-                "monitor_enabled, scan_interval_min, stale_days, disk_free_warn_pct, created_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", values + (time.time(),))
+                f"INSERT INTO shares({', '.join(SHARE_FIELDS)}, created_at) "
+                f"VALUES({', '.join('?' * (len(SHARE_FIELDS) + 1))})", values + (time.time(),))
         except Exception as exc:  # noqa: BLE001
             if "UNIQUE" in str(exc):
                 raise HTTPException(409, "Ce client possède déjà un dossier portant ce nom")
@@ -440,11 +493,7 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
     def update_share(share_id: int, body: ShareIn, user=Depends(operator)):
         get_share_or_404(share_id)
         values = _share_values(body)
-        db.execute(
-            "UPDATE shares SET client_id=?, name=?, path=?, description=?, quota_bytes=?, quota_warn_pct=?, "
-            "quota_crit_pct=?, screening_enabled=?, screening_action=?, blocked_extensions=?, "
-            "monitor_enabled=?, scan_interval_min=?, stale_days=?, disk_free_warn_pct=? WHERE id=?",
-            values + (share_id,))
+        db.execute(f"UPDATE shares SET {', '.join(f + '=?' for f in SHARE_FIELDS)} WHERE id=?", values + (share_id,))
         share = engine.share(share_id)
         engine.monitor.watch(share)
         db.audit(user["username"], "modification dossier supervisé", share["path"])
@@ -483,36 +532,6 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
             return {"scan": None}
         row["report"] = json.loads(row["report"] or "{}")
         return {"scan": row}
-
-    @app.post("/api/shares/{share_id}/duplicates")
-    def duplicates_start(share_id: int, min_size_mb: float = 1.0, user=Depends(operator)):
-        share = get_share_or_404(share_id)
-        job = duplicate_jobs.get(share_id)
-        if job and job["status"] == "running":
-            return job
-        cancel = threading.Event()
-        job = {"status": "running", "started": time.time(), "result": None, "error": None, "cancel": cancel}
-        duplicate_jobs[share_id] = job
-
-        def run():
-            try:
-                job["result"] = find_duplicates(share["path"], int(min_size_mb * 1024 * 1024), cancel=cancel)
-                job["status"] = "done"
-            except ScanCancelled:
-                job["status"] = "cancelled"
-            except Exception as exc:  # noqa: BLE001
-                job["status"], job["error"] = "failed", str(exc)
-            job["finished"] = time.time()
-
-        threading.Thread(target=run, daemon=True).start()
-        return {k: v for k, v in job.items() if k != "cancel"}
-
-    @app.get("/api/shares/{share_id}/duplicates")
-    def duplicates_status(share_id: int, user=Depends(viewer)):
-        job = duplicate_jobs.get(share_id)
-        if not job:
-            return {"status": "none"}
-        return {k: v for k, v in job.items() if k != "cancel"}
 
     # ------------------------------------------------------------ explorateur
     def resolve(share, rel):
@@ -590,19 +609,16 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
         return {"ok": True}
 
     @app.post("/api/shares/{share_id}/delete")
-    def delete_item(share_id: int, body: PathIn, user=Depends(admin)):
+    def delete_item(share_id: int, body: PathIn, user=Depends(operator)):
         share = get_share_or_404(share_id)
         target = resolve(share, body.path)
         if target == os.path.realpath(share["path"]):
             raise HTTPException(400, "Impossible de supprimer la racine du dossier supervisé")
         if not os.path.lexists(target):
             raise HTTPException(404, "Élément introuvable")
-        if os.path.isdir(target) and not os.path.islink(target):
-            shutil.rmtree(target)
-        else:
-            os.remove(target)
-        db.audit(user["username"], "suppression", target)
-        return {"ok": True}
+        item_id = recycle.discard(share, body.path, "suppression manuelle", user["username"])
+        db.audit(user["username"], "suppression (corbeille)", target)
+        return {"ok": True, "recycle_id": item_id}
 
     # ------------------------------------------------------------ journal d'activité
     def _events_query(share_id, client_id, type_, q, since, until):
@@ -859,6 +875,334 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
             return db.query("SELECT * FROM audit_log WHERE actor LIKE ? OR action LIKE ? OR target LIKE ? "
                             "ORDER BY ts DESC LIMIT ?", (f"%{q}%", f"%{q}%", f"%{q}%", limit))
         return db.query("SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?", (limit,))
+
+
+    # ------------------------------------------------------------ tâches de fond
+    def job_view(row):
+        row = dict(row)
+        for k in ("params", "progress"):
+            row[k] = json.loads(row[k] or "{}") if isinstance(row.get(k), str) else row.get(k)
+        row.pop("result", None)
+        return row
+
+    @app.get("/api/jobs")
+    def list_jobs(share_id: Optional[int] = None, type: Optional[str] = None, status: Optional[str] = None,
+                  limit: int = Query(100, le=500), user=Depends(viewer)):
+        sql = ("SELECT j.id, j.type, j.title, j.share_id, j.client_id, j.status, j.params, j.progress, j.error, "
+               "j.actor, j.created_at, j.started_at, j.finished_at, s.name AS share_name, c.name AS client_name "
+               "FROM jobs j LEFT JOIN shares s ON s.id=j.share_id LEFT JOIN clients c ON c.id=j.client_id WHERE 1=1")
+        params = []
+        for col, val in (("j.share_id", share_id), ("j.type", type)):
+            if val:
+                sql += f" AND {col}=?"
+                params.append(val)
+        if status == "active":
+            sql += " AND j.status IN ('queued','running')"
+        elif status:
+            sql += " AND j.status=?"
+            params.append(status)
+        return [job_view(r) for r in db.query(sql + " ORDER BY j.id DESC LIMIT ?", params + [limit])]
+
+    @app.get("/api/jobs/{job_id}")
+    def get_job(job_id: int, user=Depends(viewer)):
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(404, "Tâche inconnue")
+        return job
+
+    @app.post("/api/jobs/{job_id}/cancel")
+    def cancel_job(job_id: int, user=Depends(operator)):
+        return {"cancelled": jobs.cancel(job_id)}
+
+    # ------------------------------------------------------------ optimisation du stockage
+    def latest_report_of(share_id):
+        row = db.query_one("SELECT report, finished_at FROM scans WHERE share_id=? AND status='done' "
+                           "ORDER BY finished_at DESC LIMIT 1", (share_id,))
+        return (json.loads(row["report"] or "{}"), row["finished_at"]) if row else ({}, None)
+
+    @app.get("/api/optimization")
+    def optimization_overview(client_id: Optional[int] = None, user=Depends(viewer)):
+        shares = db.query("SELECT s.*, c.name AS client_name FROM shares s JOIN clients c ON c.id=s.client_id"
+                          + (" WHERE s.client_id=?" if client_id else "") + " ORDER BY c.name, s.name",
+                          (client_id,) if client_id else ())
+        rows = []
+        for s in shares:
+            rep_, at = latest_report_of(s["id"])
+            dup = jobs.latest("duplicates", s["id"])
+            junk = rep_.get("junk_total", {"count": 0, "size": 0})
+            archived = db.query_one("SELECT COUNT(*) AS n, COALESCE(SUM(size),0) AS size FROM archive_items "
+                                    "WHERE share_id=? AND status='archived'", (s["id"],))
+            rows.append({
+                "id": s["id"], "name": s["name"], "client_id": s["client_id"], "client_name": s["client_name"],
+                "path": s["path"], "size": s["last_size"], "scanned_at": at,
+                "junk_count": junk["count"], "junk_size": junk["size"],
+                "empty_dirs": rep_.get("empty_dirs", {}).get("count", 0),
+                "stale_count": rep_.get("stale_count", 0), "stale_size": rep_.get("stale_size", 0),
+                "stale_days": s["stale_days"],
+                "dup_wasted": dup["result"]["wasted_total"] if dup and dup.get("result") else None,
+                "dup_groups": dup["result"]["group_count"] if dup and dup.get("result") else None,
+                "dup_at": dup["finished_at"] if dup else None, "dup_job": dup["id"] if dup else None,
+                "archive_enabled": bool(s["archive_enabled"]), "archived_count": archived["n"],
+                "archived_size": archived["size"],
+            })
+        recycled = db.query_one("SELECT COUNT(*) AS n, COALESCE(SUM(size),0) AS size FROM recycle_items "
+                                "WHERE status='stored'")
+        return {
+            "shares": rows,
+            "totals": {
+                "junk_size": sum(r["junk_size"] for r in rows), "junk_count": sum(r["junk_count"] for r in rows),
+                "stale_size": sum(r["stale_size"] for r in rows), "stale_count": sum(r["stale_count"] for r in rows),
+                "dup_wasted": sum(r["dup_wasted"] or 0 for r in rows),
+                "archived_size": sum(r["archived_size"] for r in rows),
+                "recycle_size": recycled["size"], "recycle_count": recycled["n"],
+                "total_size": sum(r["size"] or 0 for r in rows),
+            },
+            "categories": [{k: c[k] for k in ("key", "label", "description")} for c in JUNK_CATEGORIES]
+                          + [{k: EMPTY_DIRS[k] for k in ("key", "label", "description")}],
+            "archive_root": archive.settings().get("root") or "",
+        }
+
+    @app.get("/api/shares/{share_id}/junk")
+    def share_junk(share_id: int, user=Depends(viewer)):
+        get_share_or_404(share_id)
+        rep_, at = latest_report_of(share_id)
+        cats = []
+        for c in JUNK_CATEGORIES:
+            j = rep_.get("junk", {}).get(c["key"], {"count": 0, "size": 0, "samples": []})
+            cats.append({"key": c["key"], "label": c["label"], "description": c["description"], **j})
+        ed = rep_.get("empty_dirs", {"count": 0, "samples": []})
+        cats.append({"key": "empty_dirs", "label": EMPTY_DIRS["label"], "description": EMPTY_DIRS["description"],
+                     "count": ed["count"], "size": 0, "samples": ed["samples"]})
+        return {"scanned_at": at, "categories": cats}
+
+    @app.post("/api/shares/{share_id}/cleanup")
+    def start_cleanup(share_id: int, body: CleanupIn, user=Depends(operator)):
+        share = get_share_or_404(share_id)
+        cats = [c for c in body.categories if c in CATEGORY_KEYS]
+        if not cats:
+            raise HTTPException(400, "Aucune catégorie sélectionnée")
+        actor = user["username"]
+        jid = jobs.submit("cleanup", lambda ctx: run_cleanup(share, cats, recycle, actor, ctx, db), actor,
+                          share=share, params={"categories": cats})
+        return {"job_id": jid}
+
+    def _start_duplicates(shares, actor, min_size_mb, client_id=None, title=None):
+        min_size = int(min_size_mb * 1024 * 1024)
+        share = shares[0] if len(shares) == 1 else None
+        return jobs.submit("duplicates", lambda ctx: find_duplicates(shares, min_size, ctx, engine.skip_roots()),
+                           actor, share=share, client_id=client_id, title=title,
+                           params={"min_size_mb": min_size_mb, "share_ids": [s["id"] for s in shares]})
+
+    @app.post("/api/shares/{share_id}/duplicates")
+    def share_duplicates(share_id: int, body: DuplicatesIn, user=Depends(operator)):
+        share = get_share_or_404(share_id)
+        return {"job_id": _start_duplicates([share], user["username"], body.min_size_mb)}
+
+    @app.post("/api/clients/{client_id}/duplicates")
+    def client_duplicates(client_id: int, body: DuplicatesIn, user=Depends(operator)):
+        client = db.query_one("SELECT * FROM clients WHERE id=?", (client_id,))
+        shares = db.query("SELECT * FROM shares WHERE client_id=?", (client_id,))
+        if not client or not shares:
+            raise HTTPException(404, "Client inconnu ou sans dossier supervisé")
+        return {"job_id": _start_duplicates(shares, user["username"], body.min_size_mb, client_id,
+                                            f"Recherche de doublons — tous les dossiers de {client['name']}")}
+
+    @app.post("/api/jobs/{job_id}/resolve-duplicates")
+    def resolve_dups(job_id: int, body: ResolveIn, user=Depends(operator)):
+        job = jobs.get(job_id)
+        if not job or job["type"] != "duplicates" or job["status"] != "done":
+            raise HTTPException(400, "Recherche de doublons introuvable ou non terminée")
+        groups = job["result"]["groups"]
+        if body.hashes is not None:
+            wanted = set(body.hashes)
+            groups = [g for g in groups if g["hash"] in wanted]
+        if not groups:
+            raise HTTPException(400, "Aucun groupe sélectionné")
+        shares = {s["id"]: s for s in engine.shares()}
+        actor = user["username"]
+        share = shares.get(job["share_id"]) if job["share_id"] else None
+        jid = jobs.submit("duplicates_resolve",
+                          lambda ctx: resolve_duplicates(groups, body.strategy, body.keep, shares, recycle, actor, ctx),
+                          actor, share=share, client_id=job["client_id"], exclusive=False,
+                          params={"source_job": job_id, "groups": len(groups), "strategy": body.strategy})
+        return {"job_id": jid}
+
+    # ------------------------------------------------------------ archivage à froid
+    @app.post("/api/shares/{share_id}/archive/simulate")
+    def archive_simulate(share_id: int, body: ArchivePolicyIn, user=Depends(operator)):
+        share = get_share_or_404(share_id)
+        policy = share_policy(share, body.model_dump())
+        jid = jobs.submit("archive_simulate", lambda ctx: archive.simulate(share, policy, ctx), user["username"],
+                          share=share, params={"policy": policy})
+        return {"job_id": jid}
+
+    @app.post("/api/shares/{share_id}/archive/run")
+    def archive_run(share_id: int, body: ArchivePolicyIn, user=Depends(operator)):
+        share = get_share_or_404(share_id)
+        if not archive.settings().get("root"):
+            raise HTTPException(400, "Configurez d'abord le stockage d'archive (Paramètres › Stockage).")
+        return {"job_id": engine.start_archive(share, share_policy(share, body.model_dump()), user["username"])}
+
+    @app.get("/api/archive/items")
+    def archive_items(share_id: Optional[int] = None, client_id: Optional[int] = None, q: Optional[str] = None,
+                      status: str = "archived", limit: int = Query(500, le=5000), user=Depends(viewer)):
+        sql = ("SELECT a.*, s.name AS share_name, c.name AS client_name FROM archive_items a "
+               "LEFT JOIN shares s ON s.id=a.share_id LEFT JOIN clients c ON c.id=s.client_id WHERE a.status=?")
+        params = [status]
+        if share_id:
+            sql += " AND a.share_id=?"
+            params.append(share_id)
+        if client_id:
+            sql += " AND s.client_id=?"
+            params.append(client_id)
+        if q:
+            sql += " AND a.rel_path LIKE ?"
+            params.append(f"%{q}%")
+        return db.query(sql + " ORDER BY a.archived_at DESC LIMIT ?", params + [limit])
+
+    @app.post("/api/archive/restore")
+    def archive_restore(body: BulkIdsIn, user=Depends(operator)):
+        if not body.ids:
+            raise HTTPException(400, "Aucun fichier sélectionné")
+        actor = user["username"]
+        jid = jobs.submit("archive_restore", lambda ctx: archive.restore(body.ids, actor, ctx), actor,
+                          exclusive=False, params={"count": len(body.ids)})
+        return {"job_id": jid}
+
+    # ------------------------------------------------------------ corbeille
+    @app.get("/api/recycle")
+    def recycle_list(share_id: Optional[int] = None, status: str = "stored", q: Optional[str] = None,
+                     limit: int = Query(500, le=5000), user=Depends(viewer)):
+        sql = ("SELECT r.*, s.name AS share_name, c.name AS client_name FROM recycle_items r "
+               "LEFT JOIN shares s ON s.id=r.share_id LEFT JOIN clients c ON c.id=s.client_id WHERE r.status=?")
+        params = [status]
+        if share_id:
+            sql += " AND r.share_id=?"
+            params.append(share_id)
+        if q:
+            sql += " AND (r.rel_path LIKE ? OR r.reason LIKE ?)"
+            params += [f"%{q}%", f"%{q}%"]
+        rows = db.query(sql + " ORDER BY r.deleted_at DESC LIMIT ?", params + [limit])
+        days = int(merged_setting(db, "recycle").get("retention_days", 30))
+        for r in rows:
+            r["expires_at"] = r["deleted_at"] + days * 86400 if days > 0 else None
+            r.pop("stored_path", None)
+        return {"items": rows, "retention_days": days, "root": recycle.root() if has_role(user["role"], "admin") else None}
+
+    @app.post("/api/recycle/restore")
+    def recycle_restore(body: BulkIdsIn, user=Depends(operator)):
+        restored, errors = [], []
+        for i in body.ids:
+            try:
+                restored.append(recycle.restore(i, user["username"]))
+            except Exception as exc:  # noqa: BLE001
+                errors.append({"id": i, "error": str(exc)})
+        return {"restored": len(restored), "errors": errors}
+
+    @app.post("/api/recycle/purge")
+    def recycle_purge(body: BulkIdsIn, user=Depends(admin)):
+        n = sum(1 for i in body.ids if recycle.purge(i, user["username"]))
+        return {"purged": n}
+
+    # ------------------------------------------------------------ intégrité & réparation de documents
+    @app.post("/api/shares/{share_id}/integrity")
+    def start_integrity(share_id: int, user=Depends(operator)):
+        share = get_share_or_404(share_id)
+        jid = jobs.submit("integrity", lambda ctx: integrity_scan(share, ctx, db, engine.skip_roots()),
+                          user["username"], share=share)
+        return {"job_id": jid}
+
+    @app.get("/api/shares/{share_id}/integrity")
+    def last_integrity(share_id: int, user=Depends(viewer)):
+        get_share_or_404(share_id)
+        running = db.query_one("SELECT id FROM jobs WHERE type='integrity' AND share_id=? AND status IN "
+                               "('queued','running') ORDER BY id DESC LIMIT 1", (share_id,))
+        return {"running": jobs.get(running["id"]) if running else None,
+                "last": jobs.latest("integrity", share_id), "labels": STATUS_LABEL}
+
+    @app.get("/api/shares/{share_id}/diagnose")
+    def diagnose_file(share_id: int, path: str, user=Depends(viewer)):
+        share = get_share_or_404(share_id)
+        target = resolve(share, path)
+        if not os.path.isfile(target):
+            raise HTTPException(404, "Fichier introuvable")
+        return docrepair.diagnose(target)
+
+    @app.post("/api/shares/{share_id}/repair")
+    def repair_file(share_id: int, body: RepairIn, user=Depends(operator)):
+        share = get_share_or_404(share_id)
+        resolve(share, body.path)
+        try:
+            return repair_in_share(db, recycle, share, body.path, body.mode, user["username"])
+        except FileNotFoundError:
+            raise HTTPException(404, "Fichier introuvable")
+
+    @app.post("/api/shares/{share_id}/repair-batch")
+    def repair_batch(share_id: int, body: RepairBatchIn, user=Depends(operator)):
+        share = get_share_or_404(share_id)
+        for p in body.paths:
+            resolve(share, p)
+        actor = user["username"]
+
+        def run(ctx):
+            summary = {"repaired": 0, "partial": 0, "text_salvaged": 0, "failed": 0, "not_needed": 0, "items": []}
+            for n, p in enumerate(body.paths):
+                ctx.check()
+                ctx.progress(done=n, total=len(body.paths), current=p)
+                try:
+                    r = repair_in_share(db, recycle, share, p, body.mode, actor)
+                    summary[r["status"]] = summary.get(r["status"], 0) + 1
+                    summary["items"].append({"path": p, "status": r["status"], "output": r.get("output_rel"),
+                                             "actions": r.get("actions", [])})
+                except Exception as exc:  # noqa: BLE001
+                    summary["failed"] += 1
+                    summary["items"].append({"path": p, "status": "failed", "error": str(exc)})
+            return summary
+
+        return {"job_id": jobs.submit("repair_batch", run, actor, share=share, exclusive=False,
+                                      params={"count": len(body.paths), "mode": body.mode})}
+
+    @app.post("/api/repair/upload")
+    async def repair_upload_ep(request: Request, filename: str, user=Depends(operator)):
+        content = await request.body()
+        max_mb = int(merged_setting(db, "repair").get("max_size_mb", 300))
+        if not content:
+            raise HTTPException(400, "Fichier vide")
+        if len(content) > max_mb * 1024 * 1024:
+            raise HTTPException(413, f"Fichier trop volumineux (max {max_mb} Mo)")
+        from starlette.concurrency import run_in_threadpool
+        return await run_in_threadpool(repair_upload, db, data_dir, filename, content, user["username"])
+
+    @app.get("/api/repairs")
+    def list_repairs(limit: int = Query(200, le=2000), user=Depends(viewer)):
+        rows = db.query("SELECT r.id, r.source, r.share_id, r.rel_path, r.original_name, r.format, r.status, "
+                        "r.output_path, r.created_at, r.actor, r.actions, r.diagnosis, s.name AS share_name "
+                        "FROM repairs r LEFT JOIN shares s ON s.id=r.share_id WHERE r.status != 'pending' "
+                        "ORDER BY r.id DESC LIMIT ?", (limit,))
+        for r in rows:
+            r["actions"] = json.loads(r["actions"] or "[]")
+            diag = json.loads(r["diagnosis"] or "{}")
+            r["issues"] = [i["message"] for i in (diag.get("before") or {}).get("issues", [])][:6]
+            r["message"] = diag.get("message")
+            r["after_status"] = (diag.get("after") or {}).get("status")
+            r["output_name"] = os.path.basename(r["output_path"]) if r["output_path"] else None
+            r["downloadable"] = bool(r["output_path"] and os.path.isfile(r["output_path"]))
+            del r["diagnosis"], r["output_path"]
+        return rows
+
+    @app.get("/api/repairs/{repair_id}/download")
+    def download_repair(repair_id: int, user=Depends(operator)):
+        row = db.query_one("SELECT * FROM repairs WHERE id=?", (repair_id,))
+        if not row or not row["output_path"] or not os.path.isfile(row["output_path"]):
+            raise HTTPException(404, "Fichier réparé indisponible")
+        db.audit(user["username"], "téléchargement fichier réparé", row["original_name"])
+        return FileResponse(row["output_path"], filename=os.path.basename(row["output_path"]))
+
+    @app.get("/api/repair/capabilities")
+    def repair_caps(user=Depends(viewer)):
+        lo = docrepair.find_libreoffice(merged_setting(db, "repair").get("libreoffice_path") or None)
+        return {"libreoffice": lo, "pdf": docrepair.pikepdf is not None, "xml": docrepair.etree is not None,
+                "ole": docrepair.olefile is not None, "formats": sorted(docrepair.SUPPORTED)}
 
     @app.get("/api/system")
     def system_info(user=Depends(viewer)):

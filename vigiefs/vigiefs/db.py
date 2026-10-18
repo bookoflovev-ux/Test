@@ -132,7 +132,91 @@ CREATE TABLE IF NOT EXISTS audit_log (
     details TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
+
+CREATE TABLE IF NOT EXISTS jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    share_id INTEGER REFERENCES shares(id) ON DELETE SET NULL,
+    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    params TEXT DEFAULT '{}',
+    progress TEXT DEFAULT '{}',
+    result TEXT,
+    error TEXT,
+    actor TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    started_at REAL,
+    finished_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
+
+CREATE TABLE IF NOT EXISTS recycle_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    share_id INTEGER REFERENCES shares(id) ON DELETE SET NULL,
+    share_root TEXT NOT NULL,
+    rel_path TEXT NOT NULL,
+    stored_path TEXT,
+    is_dir INTEGER DEFAULT 0,
+    size INTEGER DEFAULT 0,
+    mtime REAL,
+    reason TEXT NOT NULL,
+    job_id INTEGER,
+    deleted_at REAL NOT NULL,
+    deleted_by TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'stored',
+    restored_at REAL,
+    restored_path TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_recycle_status ON recycle_items(status, deleted_at);
+
+CREATE TABLE IF NOT EXISTS archive_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    share_id INTEGER REFERENCES shares(id) ON DELETE SET NULL,
+    share_root TEXT NOT NULL,
+    rel_path TEXT NOT NULL,
+    archive_path TEXT NOT NULL,
+    stub_path TEXT,
+    size INTEGER DEFAULT 0,
+    mtime REAL,
+    sha256 TEXT,
+    job_id INTEGER,
+    archived_at REAL NOT NULL,
+    archived_by TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'archived',
+    restored_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_archive_share ON archive_items(share_id, status);
+
+CREATE TABLE IF NOT EXISTS repairs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    share_id INTEGER REFERENCES shares(id) ON DELETE SET NULL,
+    rel_path TEXT,
+    original_name TEXT NOT NULL,
+    input_path TEXT,
+    format TEXT,
+    status TEXT NOT NULL,
+    diagnosis TEXT DEFAULT '{}',
+    actions TEXT DEFAULT '[]',
+    output_path TEXT,
+    created_at REAL NOT NULL,
+    actor TEXT NOT NULL
+);
 """
+
+# Colonnes ajoutées après la v1 : migrées automatiquement sur les bases existantes.
+SHARE_MIGRATIONS = {
+    "archive_enabled": "INTEGER DEFAULT 0",
+    "archive_age_days": "INTEGER DEFAULT 730",
+    "archive_min_size_kb": "INTEGER DEFAULT 0",
+    "archive_extensions": "TEXT DEFAULT ''",
+    "archive_exclude": "TEXT DEFAULT ''",
+    "archive_criterion": "TEXT DEFAULT 'mtime'",
+    "archive_stub": "INTEGER DEFAULT 1",
+    "archive_interval_days": "INTEGER DEFAULT 30",
+    "last_archive_at": "REAL",
+}
 
 
 class Database:
@@ -143,6 +227,12 @@ class Database:
         self._write_lock = threading.RLock()
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(shares)")}
+            for col, decl in SHARE_MIGRATIONS.items():
+                if col not in cols:
+                    conn.execute(f"ALTER TABLE shares ADD COLUMN {col} {decl}")
+            conn.execute("UPDATE jobs SET status='interrupted', finished_at=? WHERE status IN ('queued','running')",
+                         (time.time(),))
 
     @contextmanager
     def connect(self):

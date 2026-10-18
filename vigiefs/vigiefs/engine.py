@@ -9,7 +9,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from .config import merged_setting
+from .jobs import JobManager
 from .monitor import Monitor
+from .optimize import JunkClassifier
+from .storage import ArchiveService, RecycleBin, share_policy
 from .rules import (days_until_full, growth_per_day, quota_state, ransomware_matchers,
                     share_screening_matcher)
 from .scanner import ScanCancelled, quarantine_file, scan_tree
@@ -30,9 +33,13 @@ def fmt_bytes(n):
 
 
 class Engine:
-    def __init__(self, db, alerts, max_parallel_scans=2, monitor=None):
+    def __init__(self, db, alerts, max_parallel_scans=2, monitor=None, data_dir=None):
         self.db = db
         self.alerts = alerts
+        self.data_dir = data_dir or os.path.dirname(os.path.abspath(db.path))
+        self.jobs = JobManager(db)
+        self.recycle = RecycleBin(db, self.data_dir)
+        self.archive = ArchiveService(db, self.recycle)
         self.monitor = monitor or Monitor(db, alerts)
         self.executor = ThreadPoolExecutor(max_workers=max_parallel_scans, thread_name_prefix="vigiefs-scan")
         self.running = {}          # share_id -> {"started", "progress", "cancel"}
@@ -55,6 +62,7 @@ class Engine:
         for job in list(self.running.values()):
             job["cancel"].set()
         self.monitor.stop()
+        self.jobs.shutdown()
         self.executor.shutdown(wait=False, cancel_futures=True)
 
     def shares(self):
@@ -82,6 +90,10 @@ class Engine:
             interval = (share["scan_interval_min"] or 0) * 60
             if available and interval > 0 and (share["last_scan_at"] or 0) + interval <= now:
                 self.request_scan(share["id"])
+            if available and share.get("archive_enabled") and self.archive.settings().get("root"):
+                every = (share.get("archive_interval_days") or 30) * 86400
+                if (share.get("last_archive_at") or 0) + every <= now:
+                    self.start_archive(share, share_policy(share), "planificateur")
         if now - self._last_purge > 3600:
             self.purge()
             self._last_purge = now
@@ -159,7 +171,8 @@ class Engine:
                 share["path"], stale_days=share["stale_days"] or 0,
                 screening=share_screening_matcher(share, screening_cfg),
                 ransom_ext=rs_ext, ransom_notes=rs_notes,
-                progress=job["progress"], cancel=job["cancel"])
+                progress=job["progress"], cancel=job["cancel"],
+                junk=JunkClassifier.from_settings(self.db), skip_roots=self.skip_roots())
         except ScanCancelled:
             self.db.execute("UPDATE scans SET status='cancelled', finished_at=? WHERE id=?", (time.time(), scan_id))
             self.db.execute("UPDATE shares SET last_scan_status='annulée' WHERE id=?", (share["id"],))
@@ -266,6 +279,15 @@ class Engine:
             "ORDER BY finished_at", (share["id"], since))]
         return growth_per_day(pts)
 
+    def skip_roots(self):
+        return [self.recycle.root(), self.archive.settings().get("root")]
+
+    def start_archive(self, share, policy, actor):
+        self.db.execute("UPDATE shares SET last_archive_at=? WHERE id=?", (time.time(), share["id"]))
+        return self.jobs.submit(
+            "archive_run", lambda ctx: self.archive.run(share, policy, ctx, actor, ctx.id),
+            actor, share=share, params={"policy": policy})
+
     # --- rétention ---
     def purge(self):
         ret = merged_setting(self.db, "retention")
@@ -274,6 +296,8 @@ class Engine:
         self.db.execute("DELETE FROM alerts WHERE status='resolved' AND resolved_at < ?",
                         (now - ret["resolved_alerts_days"] * 86400,))
         self.db.execute("DELETE FROM sessions WHERE expires_at < ?", (now,))
+        self.db.execute("DELETE FROM jobs WHERE finished_at < ?", (now - ret["events_days"] * 86400,))
+        self.recycle.purge_expired()
         keep = int(ret["scans_per_share"])
         for share in self.shares():
             self.db.execute(
