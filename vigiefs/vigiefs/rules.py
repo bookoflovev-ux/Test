@@ -1,0 +1,114 @@
+"""Règles métier : filtrage de fichiers, détection rançongiciel, quotas, prévisions."""
+
+import fnmatch
+import os
+
+
+def normalize_extensions(raw):
+    """Accepte une liste ou une chaîne « .exe, .bat ; msi » et renvoie ['.exe', '.bat', '.msi']."""
+    if isinstance(raw, str):
+        raw = raw.replace(";", ",").replace("\n", ",").split(",")
+    out = []
+    for ext in raw or []:
+        ext = ext.strip().lower()
+        if not ext:
+            continue
+        if not ext.startswith("."):
+            ext = "." + ext
+        if ext not in out:
+            out.append(ext)
+    return out
+
+
+class Matcher:
+    """Test rapide d'un nom de fichier contre une liste d'extensions et de motifs."""
+
+    def __init__(self, extensions=(), patterns=()):
+        self.extensions = tuple(e.lower() for e in normalize_extensions(list(extensions)))
+        self.patterns = tuple(p.lower() for p in patterns if p)
+
+    def match(self, filename):
+        name = filename.lower()
+        if self.extensions and name.endswith(self.extensions):
+            return True
+        return any(fnmatch.fnmatchcase(name, p) for p in self.patterns)
+
+    def __bool__(self):
+        return bool(self.extensions or self.patterns)
+
+
+def share_screening_matcher(share, screening_settings):
+    if not share.get("screening_enabled"):
+        return Matcher()
+    exts = normalize_extensions(share.get("blocked_extensions") or "")
+    if not exts:
+        exts = normalize_extensions(screening_settings.get("default_blocked_extensions", []))
+    return Matcher(exts)
+
+
+def ransomware_matchers(rs_settings):
+    if not rs_settings.get("enabled", True):
+        return Matcher(), Matcher()
+    return (
+        Matcher(rs_settings.get("extensions", [])),
+        Matcher(patterns=rs_settings.get("note_patterns", [])),
+    )
+
+
+def quota_state(share, size):
+    """Renvoie (niveau, pourcentage) ; niveau ∈ {None, 'warning', 'critical'}."""
+    quota = share.get("quota_bytes") or 0
+    if quota <= 0 or size is None:
+        return None, None
+    pct = size * 100.0 / quota
+    if pct >= (share.get("quota_crit_pct") or 95):
+        return "critical", pct
+    if pct >= (share.get("quota_warn_pct") or 80):
+        return "warning", pct
+    return None, pct
+
+
+def growth_per_day(points):
+    """Régression linéaire sur [(timestamp, taille)] → octets/jour (ou None)."""
+    pts = [(t, s) for t, s in points if s is not None]
+    if len(pts) < 2:
+        return None
+    span = pts[-1][0] - pts[0][0]
+    if span < 3600:
+        return None
+    n = len(pts)
+    mean_t = sum(t for t, _ in pts) / n
+    mean_s = sum(s for _, s in pts) / n
+    num = sum((t - mean_t) * (s - mean_s) for t, s in pts)
+    den = sum((t - mean_t) ** 2 for t, _ in pts)
+    if den == 0:
+        return None
+    return num / den * 86400
+
+
+def days_until_full(share, size, slope_per_day):
+    quota = share.get("quota_bytes") or 0
+    if quota <= 0 or not slope_per_day or slope_per_day <= 0 or size is None:
+        return None
+    remaining = quota - size
+    if remaining <= 0:
+        return 0.0
+    return remaining / slope_per_day
+
+
+def safe_join(root, relative):
+    """Résout `relative` sous `root` et refuse toute sortie de l'arborescence."""
+    root_real = os.path.realpath(root)
+    rel = (relative or "").replace("\\", "/").lstrip("/")
+    target = os.path.realpath(os.path.join(root_real, rel))
+    try:
+        if os.path.commonpath([root_real, target]) != root_real:
+            raise ValueError("Chemin hors du dossier supervisé")
+    except ValueError:
+        raise ValueError("Chemin hors du dossier supervisé")
+    return target
+
+
+def relpath(root, path):
+    rel = os.path.relpath(path, os.path.realpath(root))
+    return "" if rel == "." else rel.replace("\\", "/")

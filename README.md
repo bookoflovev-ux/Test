@@ -68,3 +68,7 @@ ou à la maison) :
 ---
 
 _Fait avec ❤️ pour les enfants curieux._
+
+## 📁 Autre projet du dépôt
+
+[`vigiefs/`](vigiefs/README.md) — **VigieFS**, console de supervision et d'administration de serveurs de fichiers multi-clients.
