@@ -11,6 +11,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from .config import merged_setting
+from .pathcheck import user_path_length
 from .rules import ransomware_matchers, relpath, share_screening_matcher
 from .scanner import quarantine_file
 
@@ -124,7 +125,9 @@ class Monitor:
         rs = merged_setting(self.db, "ransomware")
         screening_cfg = merged_setting(self.db, "screening")
         rs_ext, rs_notes = ransomware_matchers(rs)
+        prules = merged_setting(self.db, "paths")
         rows = []
+        too_long = defaultdict(list)
         screened = defaultdict(list)
         ransom = defaultdict(list)
         touched = defaultdict(int)
@@ -146,6 +149,11 @@ class Monitor:
             root = share["path"]
             rows.append((share_id, ts, ("dossier_" if is_dir else "") + kind, relpath(root, src),
                          relpath(root, dest) if dest else None, size))
+            if kind in ("created", "moved") and prules.get("realtime_alert", True):
+                rel_t = relpath(root, target)
+                n = user_path_length(share.get("access_path") or root, rel_t)
+                if n > prules["crit_len"] or len(name) > prules["name_max"]:
+                    too_long[share_id].append({"path": rel_t, "length": n})
             if is_dir:
                 continue
             if kind in ("modified", "moved", "deleted"):
@@ -187,6 +195,14 @@ class Monitor:
                         f"{len(dq)} modifications / renommages / suppressions en {int(window)} s sur "
                         f"« {share['name']} » (seuil {threshold}). Comportement typique d'un chiffrement en cours.",
                         share=share, details={"events": len(dq), "window_sec": window})
+
+        for share_id, items in too_long.items():
+            share = self._shares[share_id]
+            self.alerts.raise_alert(
+                f"longpath-rt:{share_id}", "warning", "paths", "Chemin trop long créé",
+                f"{len(items)} élément(s) créé(s) ou renommé(s) sur « {share['name']} » dépassent "
+                f"{prules['crit_len']} caractères : ils risquent d'être inaccessibles (Explorateur, Office, sauvegarde).",
+                share=share, details={"items": items[:100]})
 
         for share_id, paths in screened.items():
             share = self._shares[share_id]

@@ -12,6 +12,9 @@ from .config import merged_setting
 from .jobs import JobManager
 from .monitor import Monitor
 from .optimize import JunkClassifier
+from .pathcheck import PathAnalyzer
+from .quotas import QuotaService
+from .rights import RightsService
 from .storage import ArchiveService, RecycleBin, share_policy
 from .rules import (days_until_full, growth_per_day, quota_state, ransomware_matchers,
                     share_screening_matcher)
@@ -40,6 +43,9 @@ class Engine:
         self.jobs = JobManager(db)
         self.recycle = RecycleBin(db, self.data_dir)
         self.archive = ArchiveService(db, self.recycle)
+        self.rights = RightsService(db, alerts, self.data_dir)
+        self.quotas = QuotaService(db, alerts, self.rights)
+        self._last_quota_check = 0
         self.monitor = monitor or Monitor(db, alerts)
         self.executor = ThreadPoolExecutor(max_workers=max_parallel_scans, thread_name_prefix="vigiefs-scan")
         self.running = {}          # share_id -> {"started", "progress", "cancel"}
@@ -94,6 +100,17 @@ class Engine:
                 every = (share.get("archive_interval_days") or 30) * 86400
                 if (share.get("last_archive_at") or 0) + every <= now:
                     self.start_archive(share, share_policy(share), "planificateur")
+        rights_cfg = merged_setting(self.db, "rights")
+        for share in self.shares():
+            every_h = share.get("acl_interval_h") or 0
+            if rights_cfg.get("scheduled_scans", True) and every_h and os.path.isdir(share["path"]) \
+                    and (share.get("last_acl_at") or 0) + every_h * 3600 <= now:
+                self.db.execute("UPDATE shares SET last_acl_at=? WHERE id=?", (now, share["id"]))
+                self.start_acl_scan(share, "planificateur")
+        qcfg = merged_setting(self.db, "quotas")
+        if now - self._last_quota_check >= int(qcfg.get("check_interval_min", 15)) * 60:
+            self._last_quota_check = now
+            self.executor.submit(self._safe, self.quotas.check_all, True)
         if now - self._last_purge > 3600:
             self.purge()
             self._last_purge = now
@@ -172,7 +189,8 @@ class Engine:
                 screening=share_screening_matcher(share, screening_cfg),
                 ransom_ext=rs_ext, ransom_notes=rs_notes,
                 progress=job["progress"], cancel=job["cancel"],
-                junk=JunkClassifier.from_settings(self.db), skip_roots=self.skip_roots())
+                junk=JunkClassifier.from_settings(self.db), skip_roots=self.skip_roots(),
+                paths=PathAnalyzer(share.get("access_path") or share["path"], merged_setting(self.db, "paths")))
         except ScanCancelled:
             self.db.execute("UPDATE scans SET status='cancelled', finished_at=? WHERE id=?", (time.time(), scan_id))
             self.db.execute("UPDATE shares SET last_scan_status='annulée' WHERE id=?", (share["id"],))
@@ -187,6 +205,7 @@ class Engine:
             return None
 
         finished = time.time()
+        self.store_folder_stats(share["id"], report)
         self.db.execute(
             "UPDATE scans SET status='done', finished_at=?, total_size=?, file_count=?, dir_count=?, "
             "error_count=?, stale_count=?, stale_size=?, report=? WHERE id=?",
@@ -197,11 +216,25 @@ class Engine:
             (finished, report["total_size"], report["file_count"], share["id"]))
         self.alerts.resolve(f"scan:{share['id']}")
         self.evaluate(share, report, screening_cfg)
+        for q in self.quotas.list(share["id"]):
+            self._safe(self.quotas.check, self.quotas.get(q["id"]))
         return scan_id
+
+    def store_folder_stats(self, share_id, report):
+        stats = report.pop("_folder_stats", None)
+        if stats is None:
+            return
+        self.db.execute("DELETE FROM folder_stats WHERE share_id=?", (share_id,))
+        self.db.executemany(
+            "INSERT INTO folder_stats(share_id, rel_path, depth, size, files, subdirs, direct_items, max_path_len, "
+            "newest_mtime) VALUES(?,?,?,?,?,?,?,?,?)",
+            [(share_id, s["rel_path"], s["depth"], s["size"], s["files"], s["subdirs"], s["direct_items"],
+              s["max_path_len"], s["newest_mtime"]) for s in stats])
 
     def evaluate(self, share, report, screening_cfg):
         """Règles proactives appliquées après chaque analyse."""
         sid, name, size = share["id"], share["name"], report["total_size"]
+        self.evaluate_paths(share, report.get("paths"))
 
         level, pct = quota_state(share, size)
         if level:
@@ -264,6 +297,35 @@ class Engine:
         else:
             self.alerts.resolve(f"access:{sid}")
 
+    def evaluate_paths(self, share, paths):
+        if not paths:
+            return
+        sid, name = share["id"], share["name"]
+        r = paths["rules"]
+        fp = f"longpath:{sid}"
+        if paths["over_crit"] or paths["over_warn"]:
+            sev = "critical" if paths["over_crit"] else "warning"
+            self.alerts.raise_alert(
+                fp, sev, "paths", "Chemins trop longs",
+                f"« {name} » contient {paths['over_crit']} chemin(s) au-delà de {r['crit_len']} caractères (limite "
+                f"Windows MAX_PATH) et {paths['over_warn']} au-delà du seuil d'alerte de {r['warn_len']}. "
+                "Ces fichiers peuvent devenir impossibles à ouvrir, copier ou sauvegarder.",
+                share=share, details={"longest": paths["longest"][:50], "over_crit": paths["over_crit"],
+                                      "over_warn": paths["over_warn"]})
+        else:
+            self.alerts.resolve(fp)
+        naming = sum(paths["naming"]["counts"].values())
+        fpn = f"naming:{sid}"
+        if naming:
+            self.alerts.raise_alert(
+                fpn, "info", "paths", "Noms de fichiers non conformes",
+                f"{naming} nom(s) incompatibles avec Windows ou OneDrive/SharePoint sur « {name} » "
+                "(caractères interdits, noms réservés, espaces en fin de nom…).",
+                share=share, details={"counts": paths["naming"]["counts"], "samples": paths["naming"]["samples"][:50]},
+                notify=False)
+        else:
+            self.alerts.resolve(fpn)
+
     def forecast_days(self, share, size=None, lookback_days=30):
         since = time.time() - lookback_days * 86400
         pts = [(r["finished_at"], r["total_size"]) for r in self.db.query(
@@ -278,6 +340,39 @@ class Engine:
             "SELECT finished_at, total_size FROM scans WHERE share_id=? AND status='done' AND finished_at>=? "
             "ORDER BY finished_at", (share["id"], since))]
         return growth_per_day(pts)
+
+    @staticmethod
+    def _safe(fn, *args):
+        try:
+            return fn(*args)
+        except Exception:  # noqa: BLE001
+            log.exception("Tâche de fond en échec")
+            return None
+
+    def start_acl_scan(self, share, actor):
+        return self.jobs.submit("acl_scan", lambda ctx: self.acl_scan(share, ctx), actor, share=share)
+
+    def acl_scan(self, share, ctx=None):
+        from . import matrix as mx
+        res = self.rights.scan(share, ctx)
+        applied = self.db.query_one("SELECT * FROM matrices WHERE share_id=? AND status='applied' "
+                                    "ORDER BY applied_at DESC LIMIT 1", (share["id"],))
+        fp = f"matrix-drift:{share['id']}"
+        if applied:
+            snap = self.rights.latest(share["id"])
+            m = json.loads(applied["data"])
+            m["options"] = {**m.get("options", {}), "reset_below": False, "remove_denies": False}
+            gaps = mx.plan(m, snap)["ops"]
+            res["matrix_gaps"] = len(gaps)
+            if gaps:
+                self.alerts.raise_alert(
+                    fp, "warning", "permissions", "Droits différents de la matrice",
+                    f"{len(gaps)} écart(s) entre les droits réels de « {share['name']} » et la matrice appliquée "
+                    f"« {applied['name']} ».", share=share,
+                    details={"matrix_id": applied["id"], "gaps": gaps[:50]})
+            else:
+                self.alerts.resolve(fp)
+        return res
 
     def skip_roots(self):
         return [self.recycle.root(), self.archive.settings().get("root")]

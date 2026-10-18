@@ -23,6 +23,9 @@ CATEGORY_LABELS = {
     "disk": "Espace disque",
     "scan": "Analyse",
     "system": "Système",
+    "permissions": "Droits d'accès",
+    "paths": "Chemins et nommage",
+    "sensitive": "Données sensibles",
 }
 
 

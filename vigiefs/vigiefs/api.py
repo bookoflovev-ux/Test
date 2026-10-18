@@ -80,13 +80,17 @@ class ShareIn(BaseModel):
     archive_criterion: str = Field("mtime", pattern="^(mtime|atime)$")
     archive_stub: bool = True
     archive_interval_days: int = Field(30, ge=1)
+    access_path: str = ""
+    acl_depth: int = Field(4, ge=0, le=8)
+    acl_interval_h: int = Field(24, ge=0)
+    matrix_depth: int = Field(2, ge=0, le=6)
 
 
 SHARE_FIELDS = ["client_id", "name", "path", "description", "quota_bytes", "quota_warn_pct", "quota_crit_pct",
                 "screening_enabled", "screening_action", "blocked_extensions", "monitor_enabled",
                 "scan_interval_min", "stale_days", "disk_free_warn_pct", "archive_enabled", "archive_age_days",
                 "archive_min_size_kb", "archive_extensions", "archive_exclude", "archive_criterion",
-                "archive_stub", "archive_interval_days"]
+                "archive_stub", "archive_interval_days", "access_path", "acl_depth", "acl_interval_h", "matrix_depth"]
 
 
 class CleanupIn(BaseModel):
@@ -1289,6 +1293,11 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
         lines += ["# TYPE vigiefs_events_recorded_total counter",
                   f"vigiefs_events_recorded_total {engine.monitor.events_total}"]
         return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
+
+    # ------------------------------------------------------------ droits, matrice, architecture, quotas, SMB, santé, RGPD
+    from .api_rights import register as register_rights
+    register_rights(app, {"db": db, "engine": engine, "jobs": jobs, "alerts": alerts, "viewer": viewer,
+                          "operator": operator, "admin": admin, "get_share": get_share_or_404, "resolve": resolve})
 
     # ------------------------------------------------------------ interface web
     @app.exception_handler(OSError)

@@ -203,6 +203,75 @@ CREATE TABLE IF NOT EXISTS repairs (
     created_at REAL NOT NULL,
     actor TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS acl_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    share_id INTEGER NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    created_at REAL NOT NULL,
+    platform TEXT NOT NULL,
+    depth INTEGER NOT NULL,
+    summary TEXT DEFAULT '{}',
+    findings TEXT DEFAULT '[]',
+    data BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_acl_share ON acl_snapshots(share_id, created_at);
+
+CREATE TABLE IF NOT EXISTS matrices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    share_id INTEGER NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'proposal',
+    status TEXT NOT NULL DEFAULT 'draft',
+    data TEXT NOT NULL,
+    baseline_snapshot INTEGER,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    created_by TEXT NOT NULL,
+    applied_at REAL,
+    applied_by TEXT,
+    backup_file TEXT
+);
+
+CREATE TABLE IF NOT EXISTS folder_stats (
+    share_id INTEGER NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    rel_path TEXT NOT NULL,
+    depth INTEGER NOT NULL,
+    size INTEGER DEFAULT 0,
+    files INTEGER DEFAULT 0,
+    subdirs INTEGER DEFAULT 0,
+    direct_items INTEGER DEFAULT 0,
+    max_path_len INTEGER DEFAULT 0,
+    newest_mtime REAL,
+    PRIMARY KEY(share_id, rel_path)
+);
+
+CREATE TABLE IF NOT EXISTS quotas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    share_id INTEGER NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    rel_path TEXT NOT NULL DEFAULT '',
+    limit_bytes INTEGER NOT NULL,
+    warn_pct INTEGER DEFAULT 85,
+    crit_pct INTEGER DEFAULT 95,
+    mode TEXT NOT NULL DEFAULT 'soft',
+    enforcement TEXT NOT NULL DEFAULT 'auto',
+    auto_apply INTEGER DEFAULT 0,
+    template TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    state TEXT DEFAULT '{}',
+    UNIQUE(share_id, rel_path)
+);
+
+CREATE TABLE IF NOT EXISTS quota_locks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    quota_id INTEGER REFERENCES quotas(id) ON DELETE SET NULL,
+    share_id INTEGER REFERENCES shares(id) ON DELETE CASCADE,
+    rel_path TEXT NOT NULL,
+    principals TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    locked_at REAL NOT NULL,
+    unlocked_at REAL
+);
 """
 
 # Colonnes ajoutées après la v1 : migrées automatiquement sur les bases existantes.
@@ -216,6 +285,11 @@ SHARE_MIGRATIONS = {
     "archive_stub": "INTEGER DEFAULT 1",
     "archive_interval_days": "INTEGER DEFAULT 30",
     "last_archive_at": "REAL",
+    "access_path": "TEXT DEFAULT ''",
+    "acl_depth": "INTEGER DEFAULT 4",
+    "acl_interval_h": "INTEGER DEFAULT 24",
+    "last_acl_at": "REAL",
+    "matrix_depth": "INTEGER DEFAULT 2",
 }
 
 

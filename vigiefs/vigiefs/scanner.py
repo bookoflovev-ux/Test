@@ -32,7 +32,7 @@ def _is_junction(entry):
 
 
 def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_notes=None,
-              progress=None, cancel=None, junk=None, skip_roots=()):
+              progress=None, cancel=None, junk=None, skip_roots=(), paths=None):
     """Parcourt `root` (sans suivre les liens) et renvoie un rapport agrégé (dict)."""
     screening = screening or Matcher()
     ransom_ext = ransom_ext or Matcher()
@@ -54,6 +54,8 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
     empty_dirs = {"count": 0, "samples": []}
     skip_real = [os.path.realpath(r) for r in skip_roots if r]
 
+    if paths is not None:
+        paths.directory("")
     stack = [root_real]
     while stack:
         if cancel is not None and cancel.is_set():
@@ -66,10 +68,12 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
             if len(errors) < 20:
                 errors.append({"path": relpath(root_real, current), "error": exc.strerror or str(exc)})
             continue
+        names = []
         with it:
             has_entries = False
             for entry in it:
                 has_entries = True
+                names.append(entry.name)
                 try:
                     if entry.is_symlink() or _is_junction(entry):
                         continue
@@ -78,6 +82,8 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
                             continue
                         dir_count += 1
                         stack.append(entry.path)
+                        if paths is not None:
+                            paths.directory(relpath(root_real, entry.path))
                         continue
                     st = entry.stat(follow_symlinks=False)
                 except OSError as exc:
@@ -103,6 +109,8 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
                         break
 
                 rel = relpath(root_real, entry.path)
+                if paths is not None:
+                    paths.file(rel, name, size, mtime)
                 first = rel.split("/", 1)[0] if "/" in rel else "(racine)"
                 top_dirs[first][0] += 1
                 top_dirs[first][1] += size
@@ -138,6 +146,8 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
 
                 if progress is not None and file_count % 500 == 0:
                     progress.update(file_count=file_count, total_size=total_size)
+        if paths is not None:
+            paths.listing(relpath(root_real, current), names)
         if not has_entries and current != root_real:
             empty_dirs["count"] += 1
             if len(empty_dirs["samples"]) < 100:
@@ -182,6 +192,8 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
         "junk_total": {"count": sum(v["count"] for v in junk_stats.values()),
                        "size": sum(v["size"] for v in junk_stats.values())},
         "empty_dirs": empty_dirs,
+        "paths": paths.report() if paths is not None else None,
+        "_folder_stats": paths.folder_stats() if paths is not None else None,
     }
 
 

@@ -18,6 +18,11 @@ JOB_LABELS = {
     "integrity": "Contrôle d'intégrité des documents",
     "repair_batch": "Réparation de documents",
     "recycle_restore": "Restauration depuis la corbeille",
+    "acl_scan": "Analyse des droits d'accès",
+    "matrix_apply": "Application d'une matrice de droits",
+    "rights_ops": "Modification de droits",
+    "sensitive": "Recherche de données sensibles",
+    "acl_restore": "Restauration des droits",
 }
 
 

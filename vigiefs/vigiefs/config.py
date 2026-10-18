@@ -89,6 +89,40 @@ DEFAULT_SETTINGS = {
         "libreoffice_path": "",
         "max_size_mb": 300,
     },
+    "paths": {
+        "warn_len": 240,
+        "crit_len": 260,
+        "cloud_len": 400,
+        "check_cloud": True,
+        "name_max": 255,
+        "max_depth": 8,
+        "crowded_items": 2000,
+        "arch_depth": 4,
+        "realtime_alert": True,
+    },
+    "rights": {
+        "group_prefix": "GDL",
+        "groups_ou": "",
+        "scheduled_scans": True,
+    },
+    "quotas": {
+        "check_interval_min": 15,
+        "unlock_below_pct": 98,
+        "templates": [
+            {"name": "Surveillance 500 Mo", "limit_gb": 0.5, "mode": "soft", "warn_pct": 85, "crit_pct": 95},
+            {"name": "Limite 2 Go", "limit_gb": 2, "mode": "hard", "warn_pct": 85, "crit_pct": 95},
+            {"name": "Limite 5 Go", "limit_gb": 5, "mode": "hard", "warn_pct": 85, "crit_pct": 95},
+            {"name": "Limite 10 Go (dossier personnel)", "limit_gb": 10, "mode": "hard", "warn_pct": 80, "crit_pct": 95},
+            {"name": "Limite 50 Go (service)", "limit_gb": 50, "mode": "hard", "warn_pct": 85, "crit_pct": 95},
+            {"name": "Limite 100 Go", "limit_gb": 100, "mode": "hard", "warn_pct": 85, "crit_pct": 95},
+            {"name": "Surveillance 1 To", "limit_gb": 1024, "mode": "soft", "warn_pct": 80, "crit_pct": 90},
+        ],
+    },
+    "sensitive": {
+        "max_file_mb": 20,
+        "extensions": [".txt", ".csv", ".log", ".xml", ".json", ".html", ".htm", ".md", ".docx", ".xlsx", ".pptx",
+                       ".odt", ".ods", ".rtf", ".eml", ".ini", ".conf", ".cfg", ".ps1", ".bat", ".sql"],
+    },
 }
 
 SEVERITY_ORDER = {"info": 0, "warning": 1, "critical": 2}
