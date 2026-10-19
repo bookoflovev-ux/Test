@@ -6,6 +6,7 @@
     python -m vigiefs stop        arrêt volontaire (jamais relancé automatiquement)
     python -m vigiefs restart     redémarrage propre
     python -m vigiefs restore-db  restaure la dernière sauvegarde saine de la base
+    python -m vigiefs demo        jeu de démonstration fictif (dossier data-demo) puis lancement
 
 Options communes : --host 0.0.0.0 --port 8470 --data D:\\VigieFS\\data
 """
@@ -23,13 +24,13 @@ import sys
 import threading
 import time
 
-COMMANDS = ("serve", "supervise", "status", "stop", "restart", "restore-db")
+COMMANDS = ("serve", "supervise", "status", "stop", "restart", "restore-db", "demo")
 
 
 def _parser():
     parser = argparse.ArgumentParser(prog="vigiefs", description="VigieFS — supervision de serveurs de fichiers")
     parser.add_argument("command", nargs="?", default="serve", choices=COMMANDS,
-                        help="serve (défaut), supervise, status, stop, restart, restore-db")
+                        help="serve (défaut), supervise, status, stop, restart, restore-db, demo")
     parser.add_argument("--host", default=os.environ.get("VIGIEFS_HOST", "127.0.0.1"),
                         help="adresse d'écoute (0.0.0.0 pour toutes les interfaces)")
     parser.add_argument("--port", type=int, default=int(os.environ.get("VIGIEFS_PORT", "8470")))
@@ -258,15 +259,44 @@ def restore_db(args, data_dir):
     return 1
 
 
+def demo(args, data_dir):
+    """Prépare le jeu fictif (une seule fois), ouvre le navigateur et lance VigieFS en mode supervisé."""
+    from . import demo as demo_data
+    from . import service
+    print("Préparation du jeu de démonstration…", flush=True)
+    res = demo_data.create(data_dir)
+    if res["created"]:
+        for s in res["shares"]:
+            print(f"  {s['client']} / {s['name']} : {s['files']} fichiers fictifs")
+    else:
+        print("  Jeu de démonstration déjà présent : réutilisé.")
+    print(f"  Dossiers fictifs : {res['base']}\n"
+          "  Pour tout effacer : arrêtez VigieFS puis supprimez le dossier de données de la démo.", flush=True)
+    if os.environ.get("VIGIEFS_NO_BROWSER") != "1":
+        url = f"{'https' if args.ssl_certfile else 'http'}://localhost:{args.port}/"
+        probe = service.probe_url("127.0.0.1", args.port, tls=bool(args.ssl_certfile))
+
+        def open_browser():
+            import webbrowser
+            for _ in range(120):
+                if service.http_probe(probe, timeout=2):
+                    webbrowser.open(url)
+                    return
+                time.sleep(1)
+        threading.Thread(target=open_browser, name="vigiefs-navigateur", daemon=True).start()
+    return supervise(args, data_dir)
+
+
 def main(argv=None):
     args = _parser().parse_args(argv)
-    data_dir = os.path.abspath(args.data or os.path.join(os.getcwd(), "data"))
+    default_dir = "data-demo" if args.command == "demo" else "data"
+    data_dir = os.path.abspath(args.data or os.path.join(os.getcwd(), default_dir))
     os.makedirs(data_dir, exist_ok=True)
     if args.reset_password:
         _reset_password(args, data_dir)
         return 0
     handler = {"serve": serve, "supervise": supervise, "status": status, "stop": stop, "restart": restart,
-               "restore-db": restore_db}[args.command]
+               "restore-db": restore_db, "demo": demo}[args.command]
     return handler(args, data_dir)
 
 

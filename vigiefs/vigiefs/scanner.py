@@ -6,7 +6,7 @@ import shutil
 import time
 from collections import defaultdict
 
-from .rules import Matcher, relpath
+from .rules import Matcher, long_path, strip_long
 
 AGE_BUCKETS = [
     ("< 30 jours", 30),
@@ -52,11 +52,17 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
     newest_mtime = 0
     junk_stats = defaultdict(lambda: {"count": 0, "size": 0, "samples": []})
     empty_dirs = {"count": 0, "samples": []}
-    skip_real = [os.path.realpath(r) for r in skip_roots if r]
+    skip_real = {os.path.normcase(os.path.realpath(r)) for r in skip_roots if r}
+    # Parcours en chemin étendu sous Windows : les éléments au-delà de 260 caractères restent visibles.
+    root_io = long_path(root_real)
+    base_len = len(root_io.rstrip("\\/")) + 1
+
+    def rel_of(p):
+        return p[base_len:].replace("\\", "/") if len(p) > base_len else ""
 
     if paths is not None:
         paths.directory("")
-    stack = [root_real]
+    stack = [root_io]
     while stack:
         if cancel is not None and cancel.is_set():
             raise ScanCancelled()
@@ -66,7 +72,7 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
         except OSError as exc:
             error_count += 1
             if len(errors) < 20:
-                errors.append({"path": relpath(root_real, current), "error": exc.strerror or str(exc)})
+                errors.append({"path": rel_of(current), "error": exc.strerror or str(exc)})
             continue
         names = []
         with it:
@@ -78,18 +84,18 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
                     if entry.is_symlink() or _is_junction(entry):
                         continue
                     if entry.is_dir(follow_symlinks=False):
-                        if os.path.realpath(entry.path) in skip_real:
+                        if skip_real and os.path.normcase(strip_long(entry.path)) in skip_real:
                             continue
                         dir_count += 1
                         stack.append(entry.path)
                         if paths is not None:
-                            paths.directory(relpath(root_real, entry.path))
+                            paths.directory(rel_of(entry.path))
                         continue
                     st = entry.stat(follow_symlinks=False)
                 except OSError as exc:
                     error_count += 1
                     if len(errors) < 20:
-                        errors.append({"path": relpath(root_real, entry.path), "error": exc.strerror or str(exc)})
+                        errors.append({"path": rel_of(entry.path), "error": exc.strerror or str(exc)})
                     continue
 
                 size, mtime = st.st_size, st.st_mtime
@@ -108,7 +114,7 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
                         ages[i][1] += size
                         break
 
-                rel = relpath(root_real, entry.path)
+                rel = rel_of(entry.path)
                 if paths is not None:
                     paths.file(rel, name, size, mtime)
                 first = rel.split("/", 1)[0] if "/" in rel else "(racine)"
@@ -147,11 +153,11 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
                 if progress is not None and file_count % 500 == 0:
                     progress.update(file_count=file_count, total_size=total_size)
         if paths is not None:
-            paths.listing(relpath(root_real, current), names)
-        if not has_entries and current != root_real:
+            paths.listing(rel_of(current), names)
+        if not has_entries and current != root_io:
             empty_dirs["count"] += 1
             if len(empty_dirs["samples"]) < 100:
-                empty_dirs["samples"].append({"path": relpath(root_real, current)})
+                empty_dirs["samples"].append({"path": rel_of(current)})
 
     def files(heap):
         return [{"path": p, "size": s, "mtime": m} for s, p, m in sorted(heap, reverse=True)]

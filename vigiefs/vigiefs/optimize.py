@@ -7,7 +7,7 @@ import time
 from collections import defaultdict
 
 from .config import merged_setting
-from .rules import relpath
+from .rules import long_path, relpath
 from .storage import STUB_SUFFIX, is_within
 
 # Catégories de fichiers inutiles. `age` = clé du paramètre d'ancienneté minimale (Paramètres › Stockage).
@@ -80,7 +80,7 @@ def run_cleanup(share, categories, recycle, actor, ctx, db):
     seen = 0
     file_cats = set(categories) - {"empty_dirs"}
     if file_cats:
-        for dirpath, dirnames, filenames in os.walk(root):
+        for dirpath, dirnames, filenames in os.walk(long_path(root)):
             ctx.check()
             dirnames[:] = [d for d in dirnames if not os.path.islink(os.path.join(dirpath, d))
                            and not any(r and is_within(os.path.join(dirpath, d), r) for r in skip)]
@@ -105,7 +105,7 @@ def run_cleanup(share, categories, recycle, actor, ctx, db):
     if "empty_dirs" in categories:
         min_age = merged_setting(db, "cleanup").get("empty_days", 7) * 86400
         now = time.time()
-        for dirpath, dirnames, filenames in os.walk(root, topdown=False):
+        for dirpath, dirnames, filenames in os.walk(long_path(root), topdown=False):
             ctx.check()
             if dirpath == root or any(r and is_within(dirpath, r) for r in skip) or os.path.islink(dirpath):
                 continue
@@ -147,7 +147,7 @@ def find_duplicates(shares, min_size=1024 * 1024, ctx=None, skip_roots=(), max_g
         root = os.path.realpath(share["path"])
         if not os.path.isdir(root):
             continue
-        for dirpath, dirnames, filenames in os.walk(root):
+        for dirpath, dirnames, filenames in os.walk(long_path(root)):
             if ctx:
                 ctx.check()
             dirnames[:] = [d for d in dirnames if not os.path.islink(os.path.join(dirpath, d))

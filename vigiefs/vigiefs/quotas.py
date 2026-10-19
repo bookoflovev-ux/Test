@@ -17,11 +17,11 @@ import time
 
 from . import acl, system
 from .config import merged_setting
-from .rules import safe_join
+from .rules import long_path, safe_join
 
 
 def dir_size(path, cancel=None):
-    total, stack = 0, [path]
+    total, stack = 0, [long_path(path)]
     while stack:
         if cancel and cancel():
             break

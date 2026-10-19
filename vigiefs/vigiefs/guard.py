@@ -44,10 +44,15 @@ def rss_mb():
                             ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
                             ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
                             ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
+            from ctypes import wintypes
+            kernel32, psapi = ctypes.windll.kernel32, ctypes.windll.psapi
+            # Types explicites : sans eux, le pseudo-handle -1 est tronqué en 32 bits sur Windows x64.
+            kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+            psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(PMC), wintypes.DWORD]
+            psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
             pmc = PMC()
             pmc.cb = ctypes.sizeof(PMC)
-            handle = ctypes.windll.kernel32.GetCurrentProcess()
-            if ctypes.windll.psapi.GetProcessMemoryInfo(handle, ctypes.byref(pmc), pmc.cb):
+            if psapi.GetProcessMemoryInfo(kernel32.GetCurrentProcess(), ctypes.byref(pmc), pmc.cb):
                 return pmc.WorkingSetSize / 1048576
             return None
         with open("/proc/self/statm") as fh:

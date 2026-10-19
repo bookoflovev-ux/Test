@@ -109,6 +109,23 @@ def safe_join(root, relative):
     return target
 
 
+def long_path(path):
+    r"""Windows : chemin étendu (\\?\) pour lire au-delà de 260 caractères, même sans LongPathsEnabled.
+
+    Sans effet sur les autres systèmes. Les chemins affichés et stockés restent relatifs (relpath).
+    """
+    if os.name != "nt" or not path or path.startswith("\\\\?\\"):
+        return path
+    path = os.path.abspath(path)
+    return "\\\\?\\UNC\\" + path[2:] if path.startswith("\\\\") else "\\\\?\\" + path
+
+
+def strip_long(path):
+    if path.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + path[8:]
+    return path[4:] if path.startswith("\\\\?\\") else path
+
+
 def relpath(root, path):
-    rel = os.path.relpath(path, os.path.realpath(root))
+    rel = os.path.relpath(strip_long(path), os.path.realpath(strip_long(root)))
     return "" if rel == "." else rel.replace("\\", "/")

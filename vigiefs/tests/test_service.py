@@ -308,3 +308,33 @@ def test_supervised_api_forwards_commands(client, tmp_path):
     assert c.post("/api/service/action", json={"action": "restart", "reason": "mise à jour"}).json()["ok"]
     cmd = service.take_command(os.path.join(tmp_path, "data", "run"))
     assert cmd["action"] == "restart" and cmd["actor"] == "admin (interface)"
+
+
+def test_windows_extended_paths(monkeypatch):
+    r"""Chemins > 260 caractères sous Windows : préfixe \\?\ (local et UNC), chemins relatifs inchangés."""
+    import ntpath
+    from vigiefs import rules
+    monkeypatch.setattr(rules, "os", SimpleNamespace(name="nt", path=ntpath))
+    assert rules.long_path("C:\\Partages\\Commun") == "\\\\?\\C:\\Partages\\Commun"
+    assert rules.long_path("\\\\SRV\\Commun\\RH") == "\\\\?\\UNC\\SRV\\Commun\\RH"
+    assert rules.long_path("\\\\?\\C:\\x") == "\\\\?\\C:\\x"
+    assert rules.strip_long("\\\\?\\UNC\\SRV\\Commun") == "\\\\SRV\\Commun"
+    deep = "\\\\?\\C:\\Partages\\Commun\\" + "\\".join(["Dossier très long"] * 20) + "\\fichier.docx"
+    assert rules.relpath("C:\\Partages\\Commun", deep) == "/".join(["Dossier très long"] * 20) + "/fichier.docx"
+    assert rules.relpath("C:\\Partages\\Commun", "\\\\?\\C:\\Partages\\Commun") == ""
+
+
+def test_demo_dataset(tmp_path):
+    from vigiefs import demo, pathcheck
+    data = tmp_path / "data-demo"
+    res = demo.create(str(data))
+    assert res["created"] and len(res["shares"]) == 2 and all(s["files"] > 30 for s in res["shares"])
+    assert demo.create(str(data))["created"] is False          # idempotent
+    db = Database(str(data / "vigiefs.db"))
+    share = db.query_one("SELECT * FROM shares WHERE name='Commun'")
+    longest = max(pathcheck.user_path_length(share["access_path"], os.path.relpath(os.path.join(dp, f), share["path"]))
+                  for dp, _, files in os.walk(share["path"]) for f in files)
+    assert longest > 260                                          # alerte « chemin trop long » garantie
+    assert max(len(os.path.join(dp, f)) for dp, _, files in os.walk(share["path"]) for f in files) < 400
+    assert db.query_one("SELECT COUNT(*) AS n FROM quotas")["n"] == 1
+    assert db.get_setting("archive")["root"].endswith("demo-archives")

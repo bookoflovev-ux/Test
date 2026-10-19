@@ -8,7 +8,7 @@ import time
 
 from . import docrepair
 from .config import merged_setting
-from .rules import relpath, safe_join
+from .rules import long_path, relpath, safe_join
 from .storage import is_within
 
 STATUS_LABEL = {"ok": "Sain", "warning": "Anomalie mineure", "corrupt": "Corrompu",
@@ -22,7 +22,7 @@ def integrity_scan(share, ctx, db, skip_roots=()):
     by_family = {}
     problems = []
     checked = skipped = 0
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(long_path(root)):
         ctx.check()
         dirnames[:] = [d for d in dirnames if not os.path.islink(os.path.join(dirpath, d))
                        and not any(r and is_within(os.path.join(dirpath, d), r) for r in skip_roots)]

@@ -114,6 +114,30 @@ Explorateur avec ACL NTFS, rôles (lecture seule / opérateur / administrateur),
 |---|---|
 | ![](docs/reparation.png) | ![](docs/theme-sombre.png) |
 
+## Essayer VigieFS sur un poste (démonstration)
+
+Pour découvrir VigieFS sur un PC Windows, un Mac ou un poste Linux, sans serveur ni vrais dossiers :
+
+1. Installez **Python 3.13** (ou 3.10 à 3.12) — sous Windows depuis
+   [python.org](https://www.python.org/downloads/windows/), en cochant *Add python.exe to PATH*.
+2. Récupérez le dossier `vigiefs` (archive ZIP de la branche sur GitHub, ou `git clone`), puis :
+   - **Windows** : double-cliquez sur `demo-vigiefs.bat` ;
+   - **macOS / Linux** : `./demo-vigiefs.sh`.
+3. Le premier lancement installe les dépendances (1 à 2 minutes), crée un **jeu fictif** dans
+   `data-demo/` et ouvre le navigateur sur <http://localhost:8470/>. Créez le compte
+   administrateur sur l'écran « Première installation ».
+
+Le jeu fictif (≈ 8 Mo, deux clients) contient de quoi essayer chaque fonction : doublons,
+fichiers inutiles, documents anciens à archiver, documents abîmés à réparer, un chemin de plus
+de 260 caractères vu du réseau, des noms non conformes, un fichier interdit, des données
+personnelles fictives (NIR, IBAN, carte, mot de passe, santé) et un quota dépassé. Les analyses
+démarrent seules ; lancez ensuite *Analyser les droits*, *Proposition AGDLP*, *Doublons*,
+*Contrôle d'intégrité* ou *Données sensibles* depuis chaque dossier.
+
+`Ctrl+C` dans la fenêtre arrête VigieFS ; supprimer le dossier `data-demo` efface tout. Aucun
+autre fichier du poste n'est lu ni modifié. Sur un poste, FSRM et Active Directory sont absents :
+les quotas stricts passent par le verrouillage VigieFS et la création de groupes AD est indisponible.
+
 ## Installation sur Windows Server
 
 Prérequis : **Python 3.10+** (cocher « Add python.exe to PATH » à l'installation).
@@ -163,6 +187,7 @@ python -m vigiefs status      état, dernier incident, disponibilité sur 30 jou
 python -m vigiefs stop        arrêt volontaire (--reason "…"), jamais relancé automatiquement
 python -m vigiefs restart     redémarrage propre
 python -m vigiefs restore-db  restaure la dernière sauvegarde saine de la base (--from FICHIER)
+python -m vigiefs demo        jeu de démonstration fictif (dossier data-demo) puis lancement
 
 Options : [--host 127.0.0.1] [--port 8470] [--data DOSSIER]
           [--ssl-certfile cert.pem --ssl-keyfile key.pem] [--reset-password UTILISATEUR]
@@ -257,6 +282,7 @@ vigiefs/
 │   ├── __main__.py     Commandes serve / supervise / status / stop / restart / restore-db
 │   ├── service.py      Superviseur 24 h/24, arrêt volontaire, journal de disponibilité
 │   ├── guard.py        Garde interne : auto-réparation, battement de cœur, maintenance de la base
+│   ├── demo.py         Jeu de démonstration fictif
 │   ├── api.py          API REST FastAPI + service de l'interface
 │   ├── api_rights.py   API droits, matrice, architecture, quotas, SMB, santé, RGPD
 │   ├── api_service.py  API service : sondes, état, disponibilité, arrêt, maintenance
@@ -289,6 +315,7 @@ vigiefs/
 ├── scripts/install-linux.sh       Service systemd
 ├── scripts/vigiefs.service
 ├── start-vigiefs.bat, stop-vigiefs.bat
+├── demo-vigiefs.bat, demo-vigiefs.sh   Essai sur un poste avec le jeu fictif
 └── tests/
 ```
 
@@ -299,6 +326,9 @@ ressource n'est chargée depuis Internet.
 
 ## Limites connues
 
+- Sous Windows, les analyses lisent les chemins de plus de 260 caractères (préfixe `\\?\`) même
+  sans `LongPathsEnabled` ; les actions sur ces fichiers (corbeille, archivage) peuvent échouer et
+  sont alors signalées.
 - Les parties propres à Windows (collecte `Get-Acl`, icacls, FSRM, cmdlets SMB, AD, contrôles de
   santé, service WinSW / NSSM) sont écrites d'après la documentation Microsoft mais testées ici
   sur des jeux de données simulés : **validez-les sur un serveur de recette** avant production.

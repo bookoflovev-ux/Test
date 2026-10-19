@@ -10,7 +10,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from .config import merged_setting
-from .rules import normalize_extensions, relpath, safe_join
+from .rules import long_path, normalize_extensions, relpath, safe_join, strip_long
 
 STUB_SUFFIX = " [archivé].url"
 
@@ -35,7 +35,7 @@ def _safe_component(name):
 
 def is_within(path, root):
     try:
-        p, r = os.path.realpath(path), os.path.realpath(root)
+        p, r = os.path.realpath(strip_long(path)), os.path.realpath(strip_long(root))
         return os.path.commonpath([p, r]) == r
     except ValueError:
         return False
@@ -168,7 +168,7 @@ def iter_archive_candidates(share, policy, ctx=None, skip_roots=()):
     exts = tuple(policy["extensions"])
     use_atime = policy["criterion"] == "atime"
     scanned = 0
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(long_path(root)):
         if ctx:
             ctx.check()
         dirnames[:] = [d for d in dirnames

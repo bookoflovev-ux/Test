@@ -11,7 +11,7 @@ import zipfile
 from collections import defaultdict
 
 from . import acl
-from .rules import relpath
+from .rules import long_path, relpath
 from .storage import is_within
 
 CATEGORIES = {
@@ -168,7 +168,7 @@ def scan_share(share, settings, ctx, snapshot=None, skip_roots=()):
     expo = _exposure(snapshot)
     results, totals = [], defaultdict(lambda: {"files": 0, "hits": 0})
     scanned = 0
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(long_path(root)):
         ctx.check()
         dirnames[:] = [d for d in dirnames if not os.path.islink(os.path.join(dirpath, d))
                        and not any(r and is_within(os.path.join(dirpath, d), r) for r in skip_roots)]

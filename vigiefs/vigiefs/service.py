@@ -226,8 +226,10 @@ def http_probe(url, timeout=15):
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
+    # Jamais via le proxy du système (poste d'entreprise) : la sonde vise l'adresse locale.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=ctx))
     try:
-        with urllib.request.urlopen(url, timeout=timeout, context=ctx) as resp:  # noqa: S310
+        with opener.open(url, timeout=timeout) as resp:
             return resp.status == 200
     except Exception:  # noqa: BLE001
         return False
