@@ -1,6 +1,7 @@
 """Connecteur RepareDocs : protocole --web, traitements en masse et individuels, résultats, sécurité."""
 
 import os
+import shutil
 import sys
 import time
 
@@ -61,6 +62,14 @@ def test_engine_missing(tmp_path):
     assert c.get("/api/reparedocs/info").json()["available"] is False
     r = c.post("/api/reparedocs/upload?filename=x.docx", content=b"PK")
     assert r.status_code == 400 and "introuvable" in r.json()["detail"]
+    # Copie partielle (lanceur seul, sans app\repare_docs) : signalée précisément, rien n'est lancé.
+    partial = tmp_path / "RepareDocs"
+    (partial / "app").mkdir(parents=True)
+    shutil.copy(os.path.join(FAKE, "app", "RepareDocs.py"), partial / "app" / "RepareDocs.py")
+    c.put("/api/settings/repair", json={"reparedocs_dir": str(partial)})
+    info = c.get("/api/reparedocs/info").json()
+    assert info["available"] is False and info["dir"] == str(partial) and "incomplet" in info["error"]
+    assert "repare_docs" in info["error"]
 
 
 def test_mass_run_results_report_and_restore(env):

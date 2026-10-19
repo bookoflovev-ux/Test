@@ -141,7 +141,9 @@ installer et aucun accès Internet nécessaire sur la machine cible.
 
 Avec `--reparedocs`, le moteur RepareDocs est intégré au sous-dossier `RepareDocs\` des paquets et
 détecté automatiquement ; sinon VigieFS le cherche dans `C:\RepareDocs` ou dans le dossier indiqué dans
-Paramètres › Stockage & réparation. Chaque archive contient un `LISEZ-MOI.txt` pas à pas. Avant d'extraire : clic droit sur le ZIP ›
+Paramètres › Stockage & réparation. Le dossier RepareDocs doit être complet : `runtime\` (Python et ses
+bibliothèques), `app\RepareDocs.py` **et** `app\repare_docs\` ; une copie partielle est signalée
+(« détecté mais inutilisable ») et refusée par `--reparedocs`. Chaque archive contient un `LISEZ-MOI.txt` pas à pas. Avant d'extraire : clic droit sur le ZIP ›
 Propriétés › **Débloquer**.
 
 ## Installation sur Windows Server
@@ -375,8 +377,9 @@ ressource n'est chargée depuis Internet.
   verrouillage passe par le masque ACL et empêche aussi la suppression ; préférez des quotas de
   système de fichiers (XFS project quotas, ZFS) pour un blocage instantané.
 - Samba ne permet pas de fermer un fichier ouvert isolément (seule la session peut l'être).
-- Le connecteur RepareDocs suit le protocole de RepareDocs Web (`RepareDocs.py --web`) ; il est testé avec un
-  moteur simulé reproduisant ce protocole : validez-le avec votre version de RepareDocs.
+- Le connecteur RepareDocs suit le protocole de RepareDocs Web (`RepareDocs.py --web`). Il est vérifié avec le
+  lanceur et le runtime Python 3.14 de RepareDocs V2.5 (sous Wine) et un moteur `repare_docs` simulé :
+  validez les traitements avec le dossier `app\repare_docs` réel.
 - Réorganisation : sous Windows la copie passe par robocopy (droits NTFS conservés) ; ailleurs par une copie
   Python sans écrasement qui conserve dates et propriétaire mais pas les ACL étendues (les dossiers cibles
   héritent des ACL par défaut). Les liens internes des documents (Excel, raccourcis) pointant vers les

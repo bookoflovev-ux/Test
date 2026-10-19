@@ -24,6 +24,10 @@ async function rdInfo(refresh = false) {
 
 /** Bloc « moteur RepareDocs » de la page Réparation. */
 function rdEngineBlock(info) {
+  if (!info.available && info.dir) {
+    return `<div class="banner critical">${icon('alert')}<div><b>RepareDocs détecté mais inutilisable</b>
+      <span class="cell-sub mono">${esc(info.dir)}</span><div>${esc(info.error || '')}</div></div></div>`;
+  }
   if (!info.available) {
     return `<div class="banner warning">${icon('info')}<div><b>RepareDocs non détecté.</b> ${esc(info.error || '')}
       Installez RepareDocs (dossier contenant <code>runtime\\python.exe</code> et <code>app\\RepareDocs.py</code>, par exemple <code>C:\\RepareDocs</code>)
@@ -40,7 +44,7 @@ function rdEngineBlock(info) {
 /** Fenêtre de lancement d'une réparation en masse (dossier supervisé, sous-dossier ou chemin libre). */
 async function rdLaunch({ shareId = null, path = '' } = {}) {
   const [info, shares] = await Promise.all([rdInfo(), api('/api/shares')]);
-  if (!info.available) return toast('RepareDocs est introuvable : voir Paramètres › Stockage & réparation', 'error');
+  if (!info.available) return toast(info.error || 'RepareDocs est introuvable : voir Paramètres › Stockage & réparation', 'error');
   const d = info.defaults || {};
   const sw = (n, label, hint, on = true) => `<label class="check" style="align-items:flex-start"><input type="checkbox" name="${n}"${on ? ' checked' : ''}> <span>${label}${hint ? `<span class="cell-sub" style="display:block;font-weight:400">${hint}</span>` : ''}</span></label>`;
   modal({ title: 'Réparation en masse avec RepareDocs', size: 'lg', submit: 'Démarrer',

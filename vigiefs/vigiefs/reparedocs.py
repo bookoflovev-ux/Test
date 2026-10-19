@@ -104,26 +104,41 @@ class RepareDocs:
                 return sys.executable, script, d
         return None
 
+    @staticmethod
+    def missing_parts(eng):
+        """Éléments indispensables absents d'une copie de RepareDocs (dossier copié partiellement)."""
+        return [p for p in (os.path.join("app", "repare_docs", "__init__.py"),
+                            os.path.join("app", "repare_docs", "pilotage.py"))
+                if not os.path.isfile(os.path.join(eng[2], p))]
+
     def command_file(self, cmd, path, timeout=60):
         eng = self.engine()
         if not eng:
             raise RepareDocsError("RepareDocs est introuvable : indiquez son dossier dans Paramètres › Stockage & "
                                   "réparation (dossier contenant runtime\\python.exe et app\\RepareDocs.py).")
+        missing = self.missing_parts(eng)
+        if missing:
+            raise RepareDocsError(f"RepareDocs est incomplet dans {eng[2]} : {', '.join(missing)} absent. Recopiez "
+                                  "le dossier app\\repare_docs de RepareDocs (dézippez l'archive complète).")
         os.makedirs(self.base, exist_ok=True)
-        with open(os.path.join(self.base, "console.log"), "ab") as err:
-            try:
-                res = subprocess.run([eng[0], eng[1], "--web", cmd, path], stdout=subprocess.PIPE, stderr=err,
-                                     stdin=subprocess.DEVNULL, timeout=timeout + 30, cwd=os.path.dirname(eng[1]),
-                                     creationflags=NO_WINDOW)
-            except subprocess.TimeoutExpired as exc:
-                raise RepareDocsError(f"Le moteur RepareDocs ne répond pas (commande « {cmd} »).") from exc
-            except OSError as exc:
-                raise RepareDocsError(f"Impossible de lancer le moteur RepareDocs : {exc}") from exc
+        try:
+            res = subprocess.run([eng[0], eng[1], "--web", cmd, path], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 stdin=subprocess.DEVNULL, timeout=timeout + 30, cwd=os.path.dirname(eng[1]),
+                                 creationflags=NO_WINDOW)
+        except subprocess.TimeoutExpired as exc:
+            raise RepareDocsError(f"Le moteur RepareDocs ne répond pas (commande « {cmd} »).") from exc
+        except OSError as exc:
+            raise RepareDocsError(f"Impossible de lancer le moteur RepareDocs : {exc}") from exc
+        if res.stderr:
+            with open(os.path.join(self.base, "console.log"), "ab") as err:
+                err.write(res.stderr)
         out = res.stdout.decode("utf-8", "replace").strip()
         try:
             data = json.loads(out)
         except ValueError as exc:
-            raise RepareDocsError(f"Réponse du moteur illisible : {out[:300]} (détails : reparedocs\\console.log)") from exc
+            lines = [ln for ln in res.stderr.decode("utf-8", "replace").splitlines() if ln.strip()]
+            detail = out[:300] or (lines[-1].strip()[:300] if lines else "aucune sortie")
+            raise RepareDocsError(f"Réponse du moteur illisible : {detail} (détails : reparedocs\\console.log)") from exc
         if not isinstance(data, dict):
             raise RepareDocsError("Réponse du moteur inattendue")
         return data

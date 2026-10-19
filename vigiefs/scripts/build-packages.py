@@ -12,8 +12,9 @@ Sources (téléchargées une fois dans --out/cache) :
     - WinSW v2.12.0 (MIT), variante .NET Framework 4.6.1, depuis les versions publiées sur GitHub.
 Les empreintes SHA-256 des éléments téléchargés sont consignées dans runtime/VERSIONS.txt.
 
---reparedocs (dossier ou archive de RepareDocs, avec runtime\python.exe et app\RepareDocs.py) : le moteur
-est intégré dans le sous-dossier RepareDocs\ des paquets, où VigieFS le détecte automatiquement.
+--reparedocs (dossier ou archive .zip de RepareDocs complet : runtime\ avec python.exe, app\ avec RepareDocs.py
+et le dossier repare_docs\) : le moteur est intégré dans le sous-dossier RepareDocs\ des paquets, où VigieFS le
+détecte automatiquement. Une copie incomplète est refusée.
 """
 
 import argparse
@@ -154,8 +155,10 @@ def reparedocs_dir(path, cache):
     for dirpath, _dirs, files in os.walk(path):
         if "RepareDocs.py" in files and os.path.basename(dirpath) == "app":
             root = os.path.dirname(dirpath)
-            if not os.path.isfile(os.path.join(root, "runtime", "python.exe")):
-                print("  attention : RepareDocs sans runtime\\python.exe")
+            missing = [p for p in ("runtime/python.exe", "runtime/Lib/os.py", "app/repare_docs/__init__.py",
+                                   "app/repare_docs/pilotage.py") if not os.path.isfile(os.path.join(root, p))]
+            if missing:
+                raise SystemExit("RepareDocs incomplet, fichiers absents : " + ", ".join(missing))
             return root
     raise SystemExit("RepareDocs introuvable : app\\RepareDocs.py absent")
 
@@ -176,7 +179,8 @@ def make_zip(kind, out_dir, runtime, winsw, py_version, reparedocs=None):
                 full = os.path.join(dirpath, name)
                 zf.write(full, f"{top}/runtime/{os.path.relpath(full, runtime).replace(os.sep, '/')}")
         if reparedocs:
-            for dirpath, _, filenames in os.walk(reparedocs):
+            for dirpath, dirnames, filenames in os.walk(reparedocs):
+                dirnames[:] = [d for d in dirnames if d != "__pycache__"]
                 for name in sorted(filenames):
                     full = os.path.join(dirpath, name)
                     zf.write(full, f"{top}/RepareDocs/{os.path.relpath(full, reparedocs).replace(os.sep, '/')}")
@@ -196,10 +200,10 @@ def main():
     out = os.path.abspath(args.out)
     cache = os.path.join(out, "cache")
     os.makedirs(cache, exist_ok=True)
+    rd = reparedocs_dir(args.reparedocs, cache)
     print("Préparation du Python embarqué…")
     runtime = build_runtime(os.path.join(cache, f"work-{args.python}"), cache, args.python)
     winsw = download(WINSW, os.path.join(cache, "WinSW.NET461.exe"))
-    rd = reparedocs_dir(args.reparedocs, cache)
     for kind in ("server", "pc"):
         path = make_zip(kind, out, runtime, winsw, args.python, rd)
         print(f"  {os.path.basename(path)} : {os.path.getsize(path) / 1048576:.1f} Mo")
