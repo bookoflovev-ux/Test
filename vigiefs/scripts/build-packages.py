@@ -1,6 +1,6 @@
-"""Fabrique les paquets Windows prêts à l'emploi (Python embarqué, aucune installation préalable).
+r"""Fabrique les paquets Windows prêts à l'emploi (Python embarqué, aucune installation préalable).
 
-    python scripts/build-packages.py [--python 3.13.16] [--out dist]
+    python scripts/build-packages.py [--python 3.13.16] [--out dist] [--reparedocs RepareDocs-V2.5.zip]
 
 Produit dans --out :
     VigieFS-<version>-WindowsServer.zip   service 24 h/24 : INSTALLER-VigieFS.bat, WinSW inclus
@@ -11,6 +11,9 @@ Sources (téléchargées une fois dans --out/cache) :
     - bibliothèques : roues Windows 64 bits depuis PyPI (pip install --target --platform win_amd64) ;
     - WinSW v2.12.0 (MIT), variante .NET Framework 4.6.1, depuis les versions publiées sur GitHub.
 Les empreintes SHA-256 des éléments téléchargés sont consignées dans runtime/VERSIONS.txt.
+
+--reparedocs (dossier ou archive de RepareDocs, avec runtime\python.exe et app\RepareDocs.py) : le moteur
+est intégré dans le sous-dossier RepareDocs\ des paquets, où VigieFS le détecte automatiquement.
 """
 
 import argparse
@@ -135,7 +138,29 @@ def windows_text(text):
     return "﻿" + text.replace("\r\n", "\n").replace("\n", "\r\n")
 
 
-def make_zip(kind, out_dir, runtime, winsw, py_version):
+def reparedocs_dir(path, cache):
+    """Dossier RepareDocs prêt à intégrer (extrait si une archive est fournie)."""
+    if not path:
+        return None
+    if os.path.isfile(path):
+        target = os.path.join(cache, "reparedocs")
+        shutil.rmtree(target, ignore_errors=True)
+        with zipfile.ZipFile(path) as zf:
+            for name in zf.namelist():
+                if name.startswith("/") or ".." in name.split("/"):
+                    raise SystemExit(f"Archive RepareDocs refusée (chemin suspect) : {name}")
+            zf.extractall(target)
+        path = target
+    for dirpath, _dirs, files in os.walk(path):
+        if "RepareDocs.py" in files and os.path.basename(dirpath) == "app":
+            root = os.path.dirname(dirpath)
+            if not os.path.isfile(os.path.join(root, "runtime", "python.exe")):
+                print("  attention : RepareDocs sans runtime\\python.exe")
+            return root
+    raise SystemExit("RepareDocs introuvable : app\\RepareDocs.py absent")
+
+
+def make_zip(kind, out_dir, runtime, winsw, py_version, reparedocs=None):
     ver = version()
     label = {"server": "WindowsServer", "pc": "PC-Windows"}[kind]
     top = f"VigieFS-{ver}-{label}"
@@ -150,6 +175,11 @@ def make_zip(kind, out_dir, runtime, winsw, py_version):
             for name in sorted(filenames):
                 full = os.path.join(dirpath, name)
                 zf.write(full, f"{top}/runtime/{os.path.relpath(full, runtime).replace(os.sep, '/')}")
+        if reparedocs:
+            for dirpath, _, filenames in os.walk(reparedocs):
+                for name in sorted(filenames):
+                    full = os.path.join(dirpath, name)
+                    zf.write(full, f"{top}/RepareDocs/{os.path.relpath(full, reparedocs).replace(os.sep, '/')}")
         if kind == "server":
             zf.write(winsw, f"{top}/tools/VigieFS-Service.exe")
             zf.writestr(f"{top}/tools/WinSW-LICENSE.txt",
@@ -161,6 +191,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--python", default="3.13.16", help="version du Python embarqué (paquet NuGet)")
     parser.add_argument("--out", default=os.path.join(ROOT, "dist"))
+    parser.add_argument("--reparedocs", help="dossier ou archive RepareDocs à intégrer aux paquets")
     args = parser.parse_args()
     out = os.path.abspath(args.out)
     cache = os.path.join(out, "cache")
@@ -168,8 +199,9 @@ def main():
     print("Préparation du Python embarqué…")
     runtime = build_runtime(os.path.join(cache, f"work-{args.python}"), cache, args.python)
     winsw = download(WINSW, os.path.join(cache, "WinSW.NET461.exe"))
+    rd = reparedocs_dir(args.reparedocs, cache)
     for kind in ("server", "pc"):
-        path = make_zip(kind, out, runtime, winsw, args.python)
+        path = make_zip(kind, out, runtime, winsw, args.python, rd)
         print(f"  {os.path.basename(path)} : {os.path.getsize(path) / 1048576:.1f} Mo")
 
 

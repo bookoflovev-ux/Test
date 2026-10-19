@@ -23,6 +23,10 @@ JOB_LABELS = {
     "rights_ops": "Modification de droits",
     "sensitive": "Recherche de données sensibles",
     "acl_restore": "Restauration des droits",
+    "restructure_propose": "Proposition d'architecture",
+    "restructure_prepare": "Réorganisation : création des dossiers",
+    "restructure_execute": "Réorganisation : déplacement vérifié",
+    "restructure_rollback": "Réorganisation : retour arrière",
 }
 
 

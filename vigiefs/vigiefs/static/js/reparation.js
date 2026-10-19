@@ -34,7 +34,17 @@ async function openDiagnosis(share, path, onDone) {
     body.innerHTML = `<div class="result-card"><div class="rc-head">${fileIcon(d.name)}<div style="flex:1;min-width:0"><div class="strong ellipsis">${esc(path)}</div><div class="cell-sub">${esc(FAMILY_LABEL[d.family] || d.format)} · ${fmtBytes(d.size)}${d.details && d.details.pages ? ` · ${d.details.pages} page(s)` : ''}</div></div>${badge(DOC_STATUS, d.status)}</div>
       <div class="rc-body"><div><h3 style="margin-top:0">Constat</h3>${issuesList(d.issues)}</div><div><h3 style="margin-top:0">Recommandation</h3><p>${esc(d.recommendation || (d.status === 'ok' ? 'Le document est sain.' : ''))}</p>
       ${canRepair ? `<div class="field" style="margin:12px 0"><label>Mode de réparation</label>${seg('mode', [['copy', 'Créer une copie réparée'], ['replace', 'Remplacer l\'original']], 'copy')}<span class="hint">« Remplacer » place l'original dans la corbeille VigieFS.</span></div>
-        <button class="btn primary" type="button" id="do-repair">${icon('wrench')} Réparer</button>` : ''}</div></div></div><div id="repair-out" style="margin-top:14px"></div>`;
+        <button class="btn primary" type="button" id="do-repair">${icon('wrench')} Réparer</button>` : ''}
+      ${can('operator') && d.status !== 'ok' ? '<button class="btn" type="button" id="do-rd" hidden>' + icon('wrench') + ' Réparer avec RepareDocs</button>' : ''}</div></div></div><div id="repair-out" style="margin-top:14px"></div>`;
+    const rdBtn = $('#do-rd', body);
+    if (rdBtn) {
+      rdInfo().then(i => { rdBtn.hidden = !i.available; }).catch(() => {});
+      rdBtn.onclick = guard(async () => {
+        const r = await api(`/api/shares/${share.id}/reparedocs/file`, { method: 'POST', body: { path } });
+        $('#modal-root').innerHTML = '';
+        location.hash = `#/reparedocs/${r.run_id}`;
+      });
+    }
     const btn = $('#do-repair', body);
     if (btn) btn.onclick = guard(async () => {
       btn.disabled = true; btn.textContent = 'Réparation en cours…';
@@ -50,10 +60,12 @@ async function openDiagnosis(share, path, onDone) {
 // ------------------------------------------------------------------ page Réparation
 async function viewRepair(view) {
   setPage('Réparation de fichiers', 'Outils', '', 'Diagnostic et réparation des documents Word, Excel, PowerPoint et PDF endommagés.');
-  const [caps, shares] = await Promise.all([api('/api/repair/capabilities'), api('/api/shares')]);
+  const [caps, shares, rd, rdRuns] = await Promise.all([api('/api/repair/capabilities'), api('/api/shares'), rdInfo(true),
+    api('/api/reparedocs/runs?limit=30').catch(() => [])]);
   view.innerHTML = `
     <div class="grid span-2-1">
       <div class="card">${cardHead('Atelier de réparation', 'Déposez un document reçu d\'un client (pièce jointe, clé USB…). L\'original n\'est jamais modifié.')}
+        ${can('operator') && rd.available ? `<div class="field" style="margin-bottom:12px"><label>Moteur</label>${seg('engine', [['vigiefs', 'VigieFS (immédiat)'], ['reparedocs', 'RepareDocs']], 'vigiefs')}</div>` : ''}
         ${can('operator') ? `<label class="dropzone" id="drop"><input type="file" id="file" hidden>
           <div class="ic">${icon('upload')}</div><div class="strong">Glissez un fichier ici ou cliquez pour parcourir</div>
           <div class="small muted">Taille maximale configurable (Paramètres › Stockage)</div>
@@ -71,7 +83,11 @@ async function viewRepair(view) {
         <h3>Contrôle d'intégrité d'un dossier</h3>
         <div class="btn-row">${sel('share', shares.map(s => [s.id, `${s.client_name} › ${s.name}`]), '', 'id="int-share" style="flex:1"')}<button class="btn" data-act="integrity" ${shares.length ? '' : 'disabled'}>${icon('shield')} Ouvrir</button></div></div>
     </div>
+    <div class="card flush">${cardHead('RepareDocs — réparation en masse', 'Moteur RepareDocs : Office, LibreOffice, Ghostscript, versions précédentes et relecture directe du disque.',
+      rd.available && can('operator') ? `<button class="btn primary" data-act="rd-launch">${icon('play')} Nouvelle réparation en masse</button>` : '')}
+      <div style="padding:0 20px 16px">${rdEngineBlock(rd)}</div>${rd.available ? rdRunsTable(rdRuns) : ''}</div>
     <div class="card flush">${cardHead('Historique des réparations', 'Atelier et réparations effectuées dans les dossiers supervisés')}<div id="hist"></div></div>`;
+  rowLinks(view);
   const loadHistory = async () => {
     const rows = await api('/api/repairs?limit=300');
     $('#hist', view).innerHTML = rows.length ? `<div class="table-wrap tall"><table><thead><tr><th>Date</th><th>Document</th><th>Origine</th><th>Résultat</th><th>Constat</th><th></th></tr></thead><tbody>
@@ -81,11 +97,18 @@ async function viewRepair(view) {
         <td class="nowrap">${r.downloadable && can('operator') ? `<a class="btn sm" href="/api/repairs/${r.id}/download">${icon('download')} ${esc(r.output_name.length > 28 ? r.output_name.slice(0, 26) + '…' : r.output_name)}</a>` : ''}</td></tr>`).join('')}</tbody></table></div>`
       : emptyState('wrench', 'Aucune réparation', 'Les réparations effectuées apparaîtront ici.');
   };
-  bindActions(view, { integrity: () => { location.hash = `#/share/${$('#int-share', view).value}/integrity`; } });
+  bindActions(view, { integrity: () => { location.hash = `#/share/${$('#int-share', view).value}/integrity`; }, 'rd-launch': () => rdLaunch() });
   const drop = $('#drop', view);
   if (drop) {
     const upload = guard(async file => {
       if (!file) return;
+      const engine = (view.querySelector('[name=engine]:checked') || {}).value;
+      if (engine === 'reparedocs') {
+        $('#lab-result', view).innerHTML = `<div class="banner info"><span class="dot run"></span>Envoi de « ${esc(file.name)} » à RepareDocs…</div>`;
+        const r = await api(`/api/reparedocs/upload?filename=${encodeURIComponent(file.name)}`, { method: 'POST', raw: file });
+        location.hash = `#/reparedocs/${r.run_id}`;
+        return;
+      }
       $('#lab-result', view).innerHTML = `<div class="banner info"><span class="dot run"></span>Analyse et réparation de « ${esc(file.name)} » (${fmtBytes(file.size)})…</div>`;
       try {
         const r = await api(`/api/repair/upload?filename=${encodeURIComponent(file.name)}`, { method: 'POST', raw: file });
@@ -106,7 +129,8 @@ async function shareIntegrity(pane, s) {
   const render = async () => {
     const d = await api(`/api/shares/${s.id}/integrity`);
     pane.innerHTML = `<div class="card">${cardHead('Contrôle d\'intégrité des documents', 'Vérifie la structure de chaque document Word, Excel, PowerPoint et PDF du dossier.',
-      can('operator') ? `<button class="btn primary" data-act="run" ${d.running || !s.path_available ? 'disabled' : ''}>${icon('shield')} ${d.last ? 'Relancer le contrôle' : 'Lancer le contrôle'}</button>` : '')}<div id="job-slot"></div></div><div id="int-res"></div>`;
+      can('operator') ? `<button class="btn" data-act="rd" hidden>${icon('wrench')} Réparer en masse avec RepareDocs</button><button class="btn primary" data-act="run" ${d.running || !s.path_available ? 'disabled' : ''}>${icon('shield')} ${d.last ? 'Relancer le contrôle' : 'Lancer le contrôle'}</button>` : '')}<div id="job-slot"></div></div><div id="int-res"></div>`;
+    rdInfo().then(i => { const b = $('[data-act=rd]', pane); if (b) b.hidden = !i.available; }).catch(() => {});
     if (d.running) {
       const job = await watchJob(d.running.id, j => { const slot = $('#job-slot', pane); if (slot) slot.innerHTML = jobLine(j); });
       if (job) render();
@@ -138,6 +162,7 @@ async function shareIntegrity(pane, s) {
   pane.addEventListener('change', e => { if (e.target.matches('[data-all]')) $$('[data-doc]', pane).forEach(c => { c.checked = e.target.checked; }); sync(); });
   bindActions(pane, {
     run: async () => { await api(`/api/shares/${s.id}/integrity`, { method: 'POST' }); render(); },
+    rd: () => rdLaunch({ shareId: s.id }),
     open: el => openDiagnosis(s, el.dataset.path),
     batch: () => {
       const paths = $$('[data-doc]:checked', pane).map(c => c.value);

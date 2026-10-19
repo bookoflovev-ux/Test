@@ -196,6 +196,8 @@ const ROUTES = [
   [/^\/settings(?:\/(\w+))?$/, viewSettings],
   [/^\/rights$/, viewRights],
   [/^\/matrix\/(\d+)$/, viewMatrix],
+  [/^\/reparedocs\/(\d+)$/, viewReparedocsRun],
+  [/^\/restructure\/(\d+)$/, viewRestructure],
   [/^\/architecture$/, viewArchitecture],
   [/^\/quotas$/, viewQuotas],
   [/^\/smb$/, viewSmb],
@@ -219,7 +221,8 @@ function route() {
   const pa = $('#page-actions'); pa.replaceWith(pa.cloneNode(false));
   $$('[data-nav]').forEach(a => {
     const href = a.dataset.nav.slice(1);
-    a.classList.toggle('active', href === '/' ? path === '/' : path === href || path.startsWith(href + '/') || (href === '/shares' && path.startsWith('/share/')) || (href === '/rights' && path.startsWith('/matrix/')));
+    a.classList.toggle('active', href === '/' ? path === '/' : path === href || path.startsWith(href + '/') || (href === '/shares' && path.startsWith('/share/')) || (href === '/rights' && path.startsWith('/matrix/'))
+      || (href === '/repair' && path.startsWith('/reparedocs/')) || (href === '/architecture' && path.startsWith('/restructure/')));
   });
   scrollTo(0, 0);
   for (const [re, fn] of ROUTES) {

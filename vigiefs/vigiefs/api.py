@@ -229,9 +229,11 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-            f"frame-ancestors {frame_ancestors}")
+        if "sandbox" not in response.headers.get("Content-Security-Policy", ""):
+            # Les pages produites par un moteur externe (rapport RepareDocs) gardent leur politique isolée.
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+                f"frame-ancestors {frame_ancestors}")
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response
@@ -1328,6 +1330,13 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
     from .api_service import register as register_service
     register_service(app, {"db": db, "engine": engine, "viewer": viewer, "admin": admin, "control": control,
                            "data_dir": data_dir})
+    from .api_reparedocs import register as register_reparedocs
+    from .api_restructure import register as register_restructure
+    common = {"db": db, "engine": engine, "jobs": jobs, "alerts": alerts, "viewer": viewer, "operator": operator,
+              "admin": admin, "get_share": get_share_or_404, "resolve": resolve, "data_dir": data_dir,
+              "has_role": has_role}
+    register_reparedocs(app, common)
+    register_restructure(app, common)
 
     # ------------------------------------------------------------ interface web
     @app.exception_handler(OSError)

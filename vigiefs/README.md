@@ -64,6 +64,19 @@ supervision, **droits d'accès et matrice AGDLP**, **architecture et chemins tro
 | **Nommage** | Caractères interdits (`" * : < > ? \ \|`), espaces en début ou fin, point final, noms réservés (CON, PRN, AUX, NUL, COM1…, LPT1…), noms bloqués par OneDrive / SharePoint (`.lock`, `desktop.ini`, `_vti_`, `~$`), conflits de casse. |
 | **Structure** | Profondeur excessive, dossiers surchargés, fichiers à la racine, répartition par niveau, arborescence annotée (taille, fichiers, chemin maximal, ACL explicites, anomalies). |
 
+### Réorganisation d'arborescence (architecture optimisée)
+| Domaine | Ce que fait VigieFS |
+|---|---|
+| **Proposition** | Depuis l'onglet Architecture : *Proposer une architecture optimisée*. Noms non conformes corrigés (sans jamais créer de doublon), noms raccourcis sur les branches trop longues, niveaux intermédiaires inutiles (« Projet/Projet », « Nouveau dossier ») supprimés, dossiers vides retirés, dossiers surchargés rangés par année, fichiers de la racine rangés dans « _A classer », données froides déplacées dans « _Archives » (chemin d'origine conservé), premier niveau rangé dans un modèle numéroté (01 - Direction, 02 - Finances…). |
+| **Sélection** | Chaque opération (et chaque règle) se coche ou se décoche, les noms proposés sont modifiables ; indicateurs avant / après (chemins trop longs, profondeur, racine), contrôles bloquants (noms invalides, destinations en conflit) et aperçu de l'arborescence avant / après. Script PowerShell équivalent pour revue. |
+| **Étape 1 — créer les dossiers** | Contrôles (sources présentes, cibles valides et pas trop longues, fichiers ouverts, espace disque) puis création de **toute l'arborescence cible**. Aucun fichier n'est déplacé : vérifiez, appliquez une matrice de droits aux nouveaux dossiers si besoin. |
+| **Étape 2 — déplacer (robocopy)** | Cliché instantané du volume (Windows Server), sauvegarde des ACL, inventaire ; renommages de fichiers atomiques, puis **robocopy sans écrasement** (`/E /COPY:DATS /DCOPY:DAT /XC /XN /XO`) : chaque fichier n'est copié qu'une fois vers son dossier final. Chaque copie est **vérifiée** (taille, date ; empreinte SHA-256 en option et pour toute fusion) et **seule une source vérifiée est supprimée** ; le reste (conflit, fichier ouvert) demeure en place et est listé. Inventaire final comparé, détection de rafale suspendue pendant l'opération, nouvelle analyse du dossier et des droits. |
+| **Retour arrière** | Chaque fichier déplacé est consigné dans un manifeste : *Retour arrière* remet exactement l'arborescence d'origine, avec les mêmes garanties. |
+
+| Plan de réorganisation | Suivi d'un traitement RepareDocs |
+|---|---|
+| ![](docs/reorganisation.png) | ![](docs/reparedocs.png) |
+
 ### Quotas stricts, partages, santé, données sensibles
 | Domaine | Ce que fait VigieFS |
 |---|---|
@@ -96,6 +109,7 @@ supervision, **droits d'accès et matrice AGDLP**, **architecture et chemins tro
 | **Dernier recours** | Extraction du texte (Word/PowerPoint) ou des données (Excel) dans un nouveau document. |
 | **Contrôle d'intégrité** | Analyse d'un dossier entier, liste des documents corrompus / irrécupérables, **réparation en lot** (copie « (réparé) » ou remplacement de l'original, mis en corbeille). |
 | **Atelier** | Glisser-déposer d'un document reçu d'un client, téléchargement du fichier réparé, historique. |
+| **Moteur RepareDocs** | Intégré à VigieFS : réparation **en masse** d'un dossier supervisé ou d'un sous-dossier, et **individuelle** (atelier, ou fichier d'un dossier depuis son diagnostic), avec les moteurs de RepareDocs (Microsoft Office, LibreOffice, Ghostscript, versions précédentes Windows, relecture directe du disque). Suivi en direct (étapes, progression, journal), résultats filtrables, rapport et dossier de sortie consultables, arrêt / reprise, **remise en place** des fichiers réparés sur confirmation (originaux conservés), dépôt d'une copie « (réparé) » ou remplacement de l'original (original dans la corbeille VigieFS). |
 
 Principes : l'original n'est jamais écrasé sans être conservé, chaque fichier réparé est **re-diagnostiqué** avant d'être proposé, et un fichier irrécupérable est signalé comme tel avec la marche à suivre (restauration Datto).
 
@@ -116,7 +130,7 @@ Explorateur avec ACL NTFS, rôles (lecture seule / opérateur / administrateur),
 
 ## Paquets Windows prêts à l'emploi
 
-`python scripts/build-packages.py` fabrique deux archives autonomes : **Python 3.13 embarqué**
+`python scripts/build-packages.py [--reparedocs RepareDocs-V2.5.zip]` fabrique deux archives autonomes : **Python 3.13 embarqué**
 (paquet NuGet officiel de la Python Software Foundation) et bibliothèques incluses, donc rien à
 installer et aucun accès Internet nécessaire sur la machine cible.
 
@@ -125,7 +139,9 @@ installer et aucun accès Internet nécessaire sur la machine cible.
 | `VigieFS-<version>-WindowsServer.zip` | Windows Server 2019, 2022, 2025 (et 2016), avec ou sans bureau (Server Core) : service 24 h/24 (WinSW inclus) | `INSTALLER-VigieFS.bat`, `DESINSTALLER-VigieFS.bat` |
 | `VigieFS-<version>-PC-Windows.zip` | Windows 10 / 11 : essai ou usage sur un poste | `demo-vigiefs.bat`, `lancer-vigiefs.bat`, `arreter-vigiefs.bat` |
 
-Chaque archive contient un `LISEZ-MOI.txt` pas à pas. Avant d'extraire : clic droit sur le ZIP ›
+Avec `--reparedocs`, le moteur RepareDocs est intégré au sous-dossier `RepareDocs\` des paquets et
+détecté automatiquement ; sinon VigieFS le cherche dans `C:\RepareDocs` ou dans le dossier indiqué dans
+Paramètres › Stockage & réparation. Chaque archive contient un `LISEZ-MOI.txt` pas à pas. Avant d'extraire : clic droit sur le ZIP ›
 Propriétés › **Débloquer**.
 
 ## Installation sur Windows Server
@@ -297,6 +313,9 @@ vigiefs/
 │   ├── service.py      Superviseur 24 h/24, arrêt volontaire, journal de disponibilité
 │   ├── guard.py        Garde interne : auto-réparation, battement de cœur, maintenance de la base
 │   ├── demo.py         Jeu de démonstration fictif
+│   ├── reparedocs.py   Connecteur du moteur RepareDocs (protocole --web, exécutions, résultats)
+│   ├── restructure.py  Réorganisation : proposition, emplacements finaux, robocopy vérifié, retour arrière
+│   ├── api_reparedocs.py, api_restructure.py   API correspondantes
 │   ├── api.py          API REST FastAPI + service de l'interface
 │   ├── api_rights.py   API droits, matrice, architecture, quotas, SMB, santé, RGPD
 │   ├── api_service.py  API service : sondes, état, disponibilité, arrêt, maintenance
@@ -356,6 +375,12 @@ ressource n'est chargée depuis Internet.
   verrouillage passe par le masque ACL et empêche aussi la suppression ; préférez des quotas de
   système de fichiers (XFS project quotas, ZFS) pour un blocage instantané.
 - Samba ne permet pas de fermer un fichier ouvert isolément (seule la session peut l'être).
+- Le connecteur RepareDocs suit le protocole de RepareDocs Web (`RepareDocs.py --web`) ; il est testé avec un
+  moteur simulé reproduisant ce protocole : validez-le avec votre version de RepareDocs.
+- Réorganisation : sous Windows la copie passe par robocopy (droits NTFS conservés) ; ailleurs par une copie
+  Python sans écrasement qui conserve dates et propriétaire mais pas les ACL étendues (les dossiers cibles
+  héritent des ACL par défaut). Les liens internes des documents (Excel, raccourcis) pointant vers les
+  anciens chemins ne sont pas réécrits : prévenez les utilisateurs.
 - La détection de données sensibles est **heuristique** (motifs + clés de contrôle) : elle aide
   à prioriser, sans valeur de certification RGPD.
 - Le superviseur ne survit pas à l'arrêt du serveur lui-même : c'est le service système qui

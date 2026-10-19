@@ -57,6 +57,7 @@ async function shareArchitecture(pane, s) {
     <div class="card flush">${cardHead('Noms à corriger', 'Incompatibles avec Windows ou avec une migration OneDrive / SharePoint')}
       ${a.naming.samples.length ? `<div class="table-wrap tall"><table><thead><tr><th>Problème</th><th>Élément</th><th>Nature</th></tr></thead><tbody>${a.naming.samples.map(n => `<tr><td><span class="pill warn">${esc(NAMING_LABEL[n.code] || n.code)}</span></td><td class="path">${esc(n.path)}</td><td class="small">${esc(n.kind)}</td></tr>`).join('')}</tbody></table></div>`
         : emptyState('check', 'Tous les noms sont conformes', '', '', 'good')}</div>
+    <div id="rs-panel"></div>
     <div class="card flush">${cardHead('Arborescence annotée', `Niveaux 0 à ${r.arch_depth} · taille, fichiers, chemin le plus long, héritage`)}
       <div class="table-wrap tall"><table><thead><tr><th>Dossier</th><th class="num">Taille</th><th style="width:140px"></th><th class="num">Fichiers</th><th class="num">Sous-dossiers</th><th class="num">Chemin max</th><th>Droits</th><th>Dernière modif.</th></tr></thead><tbody>
       ${(() => { const max = Math.max(1, ...a.tree.map(t => t.size)); return a.tree.map(t => `<tr><td class="nowrap" style="padding-left:${12 + t.depth * 18}px">${icon('folder', 'file-icon dir')}${esc(t.rel_path ? t.rel_path.split('/').pop() : '(racine)')}</td>
@@ -68,6 +69,7 @@ async function shareArchitecture(pane, s) {
   const dfMax = Math.max(-1, ...Object.keys(m.depth_files || {}).map(Number));
   const df = Array.from({ length: dfMax + 1 }, (_, k) => { const v = (m.depth_files || {})[k] || 0; return { label: String(k), value: v, tip: `Niveau ${k}<br><b>${fmtNum(v)}</b> fichier(s)` }; });
   if (df.length) columnChart($('#depth-chart', pane), df, { height: 200 }); else $('#depth-chart', pane).innerHTML = '<div class="empty">Aucune donnée</div>';
+  restructurePanel($('#rs-panel', pane), s).catch(e => { $('#rs-panel', pane).innerHTML = `<div class="banner critical">${esc(e.message)}</div>`; });
 }
 
 // ------------------------------------------------------------------ quotas

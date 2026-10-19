@@ -484,3 +484,14 @@ ul.guarantees li b { color: var(--ink); }
 ul.guarantees li svg { width: 18px; height: 18px; flex: none; margin-top: 1px; fill: var(--good, #16a34a); }
 .banner > div { font-weight: 450; line-height: 1.5; }
 .banner > div b { font-weight: 650; }
+
+/* ------------------------------------------------------------------ étapes (RepareDocs, réorganisation) */
+ol.stepper { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 0 0 16px; padding: 0; }
+ol.stepper .step { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+ol.stepper .step .dot { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 650;
+  border: 1.5px solid var(--border); background: var(--surface); color: var(--muted); }
+ol.stepper .step.current { color: var(--ink); font-weight: 600; }
+ol.stepper .step.current .dot { border-color: var(--accent, #2563eb); color: var(--accent, #2563eb); }
+ol.stepper .step.done .dot { background: var(--good); border-color: var(--good); color: #fff; }
+ol.stepper .step + .step::before { content: ""; width: 18px; height: 1.5px; background: var(--border); margin-right: 4px; }
+#rd-logs .err { color: var(--critical, #c62828); }

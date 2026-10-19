@@ -79,14 +79,16 @@ async function viewSettings(view, query, tab) {
       ${field('Vides après (jours)', inp('empty_days', cl.empty_days, 'number', 'min="0"'), 'Fichiers et dossiers vides.')}</div>`, 'f-cl', '', 'Ancienneté minimale avant qu\'un fichier soit considéré comme inutile.') +
       formCard('Réparation de documents', `<div class="form-grid">
       ${field('Chemin de LibreOffice (optionnel)', inp('libreoffice_path', rp.libreoffice_path, 'text', 'placeholder="Détection automatique"'), 'soffice.exe — améliore la réparation des anciens formats .doc/.xls/.ppt.')}
-      ${field('Taille maximale (Mo)', inp('max_size_mb', rp.max_size_mb, 'number', 'min="1"'), 'Pour l\'atelier et le contrôle d\'intégrité.')}</div>`, 'f-rp');
+      ${field('Taille maximale (Mo)', inp('max_size_mb', rp.max_size_mb, 'number', 'min="1"'), 'Pour l\'atelier et le contrôle d\'intégrité.')}
+      ${field('Dossier de RepareDocs (optionnel)', inp('reparedocs_dir', rp.reparedocs_dir, 'text', 'placeholder="Détection automatique : C:\\RepareDocs"'), 'Dossier contenant runtime\\python.exe et app\\RepareDocs.py.')}
+      ${field('Sorties RepareDocs par défaut (optionnel)', inp('reparedocs_output', rp.reparedocs_output, 'text', 'placeholder="Dossier de données VigieFS\\reparedocs\\sorties"'), 'De préférence sur un autre disque que les dossiers analysés.')}</div>`, 'f-rp');
     onSubmit('f-rc', d => save('recycle', d));
     onSubmit('f-ar', d => save('archive', d));
     onSubmit('f-cl', d => save('cleanup', d));
     onSubmit('f-rp', d => save('repair', d));
   }
   if (tab === 'compliance') {
-    const p = st.paths; const r = st.rights; const q = st.quotas; const sv = st.sensitive;
+    const p = st.paths; const r = st.rights; const q = st.quotas; const sv = st.sensitive; const rs = st.restructure;
     pane.innerHTML = formCard('Longueur des chemins et nommage', `<div class="form-grid cols-3">
       ${field("Seuil d'avertissement (caractères)", inp('warn_len', p.warn_len, 'number', 'min="50"'))}
       ${field('Seuil critique (MAX_PATH)', inp('crit_len', p.crit_len, 'number', 'min="50"'), 'Windows : 260 caractères.')}
@@ -107,7 +109,16 @@ async function viewSettings(view, query, tab) {
       ${field('Modèles de quota', `<textarea name="templates" style="min-height:160px">${esc((q.templates || []).map(t => `${t.name} ; ${t.limit_gb} ; ${t.mode === 'hard' ? 'strict' : 'souple'} ; ${t.warn_pct} ; ${t.crit_pct}`).join('\n'))}</textarea>`, 'Une ligne par modèle : nom ; limite en Go ; strict|souple ; seuil avertissement % ; seuil critique %', true)}</div>`, 'f-quotas') +
       formCard('Données sensibles (RGPD)', `<div class="form-grid">
       ${field('Taille maximale lue par fichier (Mo)', inp('max_file_mb', sv.max_file_mb, 'number', 'min="1"'))}
-      ${field('Extensions analysées', `<textarea name="extensions">${esc(listToText(sv.extensions))}</textarea>`, '', true)}</div>`, 'f-sens');
+      ${field('Extensions analysées', `<textarea name="extensions">${esc(listToText(sv.extensions))}</textarea>`, '', true)}</div>`, 'f-sens') +
+      formCard('Réorganisation d\'arborescence', `<div class="form-grid cols-3">
+      ${field('Nom de dossier long au-delà de (caractères)', inp('long_name', rs.long_name, 'number', 'min="10"'), 'Candidat au raccourcissement sur une branche trop longue.')}
+      ${field('Longueur visée d\'un nom raccourci', inp('short_name', rs.short_name, 'number', 'min="8"'))}
+      ${field('Données froides après (années)', inp('cold_years', rs.cold_years, 'number', 'min="1"'))}
+      ${field('Dossier des archives', inp('archive_folder', rs.archive_folder))}
+      ${field('Dossier des fichiers à classer', inp('unsorted_folder', rs.unsorted_folder))}
+      ${field('Copies robocopy en parallèle', inp('robocopy_threads', rs.robocopy_threads, 'number', 'min="1" max="64"'))}
+      <div class="field">${chk('verify_hash', 'Vérification par empreinte SHA-256 par défaut', rs.verify_hash)}</div>
+      <div class="field">${chk('vss_snapshot', 'Cliché instantané avant déplacement par défaut', rs.vss_snapshot)}</div></div>`, 'f-rs', '', 'Valeurs par défaut des propositions d\'architecture optimisée.');
     onSubmit('f-paths', d => save('paths', d));
     onSubmit('f-rights', d => save('rights', d));
     onSubmit('f-quotas', d => {
@@ -118,6 +129,7 @@ async function viewSettings(view, query, tab) {
       return save('quotas', { check_interval_min: d.check_interval_min, unlock_below_pct: d.unlock_below_pct, templates });
     });
     onSubmit('f-sens', d => save('sensitive', { max_file_mb: d.max_file_mb, extensions: textToList(d.extensions) }));
+    onSubmit('f-rs', d => save('restructure', d));
   }
   if (tab === 'retention') {
     const f = st.forecast; const r = st.retention;

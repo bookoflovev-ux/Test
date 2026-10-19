@@ -244,6 +244,37 @@ CREATE TABLE IF NOT EXISTS folder_stats (
     PRIMARY KEY(share_id, rel_path)
 );
 
+CREATE TABLE IF NOT EXISTS reparedocs_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    share_id INTEGER REFERENCES shares(id) ON DELETE SET NULL,
+    source TEXT,
+    output TEXT,
+    options TEXT DEFAULT '{}',
+    origin TEXT DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'running',
+    task_dir TEXT,
+    summary TEXT DEFAULT '{}',
+    error TEXT,
+    created_at REAL NOT NULL,
+    finished_at REAL,
+    actor TEXT
+);
+
+CREATE TABLE IF NOT EXISTS restructure_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    share_id INTEGER NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    data TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    created_by TEXT,
+    updated_at REAL,
+    prepared_at REAL,
+    executed_at REAL,
+    result TEXT DEFAULT '{}'
+);
+
 CREATE TABLE IF NOT EXISTS quotas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     share_id INTEGER NOT NULL REFERENCES shares(id) ON DELETE CASCADE,

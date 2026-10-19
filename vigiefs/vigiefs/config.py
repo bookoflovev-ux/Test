@@ -88,6 +88,18 @@ DEFAULT_SETTINGS = {
     "repair": {
         "libreoffice_path": "",
         "max_size_mb": 300,
+        "reparedocs_dir": "",
+        "reparedocs_output": "",
+    },
+    "restructure": {
+        "long_name": 40,
+        "short_name": 30,
+        "cold_years": 3,
+        "archive_folder": "_Archives",
+        "unsorted_folder": "_A classer",
+        "robocopy_threads": 8,
+        "verify_hash": False,
+        "vss_snapshot": True,
     },
     "paths": {
         "warn_len": 240,

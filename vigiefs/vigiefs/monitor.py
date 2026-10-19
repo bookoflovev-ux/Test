@@ -52,6 +52,7 @@ class Monitor:
         self._writer = None
         self._lock = threading.Lock()
         self.events_total = 0
+        self.quiet = set()         # partages en réorganisation : pas de détection de rafale
 
     # --- cycle de vie ---
     def start(self):
@@ -237,6 +238,8 @@ class Monitor:
             window = float(rs.get("burst_window_sec", 60))
             threshold = int(rs.get("burst_threshold", 200))
             for share_id, n in touched.items():
+                if share_id in self.quiet:
+                    continue          # déplacements massifs volontaires (réorganisation en cours)
                 dq = self._bursts[share_id]
                 dq.extend([now] * n)
                 while dq and dq[0] < now - window:
