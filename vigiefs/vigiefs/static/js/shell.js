@@ -19,9 +19,11 @@ async function boot() {
 
 function authLayout(title, inner) {
   const points = [
-    ['shield', 'Supervision temps réel, quotas et détection de rançongiciel'],
+    ['shield', 'Supervision temps réel, quotas stricts et détection de rançongiciel'],
+    ['lock', "Droits d'accès, matrice AGDLP et chemins trop longs"],
     ['broom', 'Nettoyage des fichiers inutiles, doublons et archivage à froid'],
     ['wrench', 'Réparation des documents Word, Excel, PowerPoint et PDF'],
+    ['activity', 'Service 24 h/24 avec relance automatique et auto-réparation'],
     ['report', 'Rapports par client et intégration au centre de supervision'],
   ];
   return `<div class="auth-screen">

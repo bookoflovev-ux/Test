@@ -275,7 +275,7 @@ class Supervisor:
     def install_signal_handlers(self):
         def handler(signum, _frame):
             name = signal.Signals(signum).name if hasattr(signal, "Signals") else str(signum)
-            self.request_stop("gestionnaire de services", f"signal {name} (arrêt du service ou du système)")
+            self.request_stop("gestionnaire de services", f"signal {name} (Ctrl+C, arrêt du service ou du système)")
         for sig in ("SIGINT", "SIGTERM", "SIGBREAK", "SIGHUP"):
             if hasattr(signal, sig):
                 try:

@@ -130,7 +130,8 @@ def supervise(args, data_dir):
     sup.install_signal_handlers()
     scheme = "https" if args.ssl_certfile else "http"
     print(f"\n  VigieFS en mode service 24 h/24 — interface : {scheme}://localhost:{args.port}/\n"
-          f"  Arrêt volontaire : python -m vigiefs stop --data \"{data_dir}\"\n", flush=True)
+          f"  Arrêt volontaire : Ctrl+C dans cette fenêtre, ou python -m vigiefs stop --data \"{data_dir}\"\n",
+          flush=True)
     return sup.run()
 
 
