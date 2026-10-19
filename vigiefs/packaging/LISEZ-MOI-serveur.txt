@@ -1,0 +1,51 @@
+VigieFS {version} — Paquet Windows Server
+==========================================
+
+Contenu : VigieFS, Python {python} embarqué et WinSW (service Windows).
+Aucun accès Internet ni installation de Python ne sont nécessaires.
+
+PRÉREQUIS
+- Windows Server 2016, 2019, 2022 ou 2025 (64 bits) ; .NET Framework 4.6.1 ou plus (présent d'office).
+- Un compte administrateur pour l'installation.
+
+INSTALLATION (environ 5 minutes)
+1. Clic droit sur le fichier ZIP > Propriétés > cochez « Débloquer » > OK,
+   puis « Extraire tout » vers un disque local du serveur (pas un lecteur réseau).
+2. Double-cliquez sur INSTALLER-VigieFS.bat et acceptez l'élévation des droits.
+3. Répondez aux questions (Entrée = valeur proposée) :
+     - dossier du programme ........ C:\Program Files\VigieFS
+     - dossier des données ......... C:\ProgramData\VigieFS
+     - port de l'interface web ..... 8470
+     - accès depuis le réseau ...... N = uniquement depuis le serveur ; O = depuis les postes
+                                     (le pare-feu est ouvert sur ce port)
+     - compte de service ........... vide = SYSTEM ; un compte du domaine est conseillé pour les
+                                     partages distants et la création de groupes AD
+4. Le navigateur s'ouvre : créez le compte administrateur VigieFS.
+   Un raccourci « VigieFS » est ajouté sur le bureau.
+
+FONCTIONNEMENT 24 H/24
+- Service Windows « VigieFS » : démarrage automatique (différé) au démarrage du serveur,
+  relance automatique en cas d'incident, auto-réparation des composants.
+- VigieFS ne s'arrête que sur décision :
+    Stop-Service VigieFS   ou   bouton « Arrêter » (Administration > Service & disponibilité)
+  Pour le relancer : Start-Service VigieFS
+- État détaillé (invite de commandes) :
+    "C:\Program Files\VigieFS\runtime\python.exe" -m vigiefs status --data "C:\ProgramData\VigieFS"
+
+MISE À JOUR
+- Extrayez la nouvelle version et relancez INSTALLER-VigieFS.bat : le programme est remplacé,
+  les données et réglages sont conservés.
+
+DÉSINSTALLATION
+- DESINSTALLER-VigieFS.bat (dans le dossier du programme) supprime le service et le raccourci.
+  Le programme et les données restent sur le disque, à supprimer au besoin.
+
+SAUVEGARDE
+- Sauvegardez le dossier des données (ex. avec Datto). VigieFS y garde aussi 7 sauvegardes
+  quotidiennes de sa base (sous-dossier sauvegardes-base) et les sauvegardes de droits.
+
+SUPERVISION DATTO RMM
+- Composant « Monitor » : integrations\datto-rmm\VigieFS-Monitor.ps1 (voir README.md).
+
+Documentation complète : README.md. Licences : runtime\LICENSE.txt (Python),
+tools\WinSW-LICENSE.txt (WinSW, MIT).

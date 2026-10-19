@@ -43,6 +43,8 @@ def _parser():
     parser.add_argument("--supervised", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--mode", default=os.environ.get("VIGIEFS_SERVICE_MODE", "console"),
                         help="supervise : type d'hébergement affiché (windows-service, systemd, tache-planifiee…)")
+    parser.add_argument("--open-browser", action="store_true",
+                        help="supervise : ouvre le navigateur dès que l'interface répond")
     parser.add_argument("--hang-timeout", type=int, default=300,
                         help="supervise : délai sans battement de cœur avant relance (s)")
     parser.add_argument("--reason", default="", help="stop / restart : motif journalisé")
@@ -120,9 +122,26 @@ def serve(args, data_dir):
     return 0
 
 
+def _open_browser_when_ready(args):
+    from . import service
+    url = f"{'https' if args.ssl_certfile else 'http'}://localhost:{args.port}/"
+    probe = service.probe_url("127.0.0.1", args.port, tls=bool(args.ssl_certfile))
+
+    def run():
+        import webbrowser
+        for _ in range(120):
+            if service.http_probe(probe, timeout=2):
+                webbrowser.open(url)
+                return
+            time.sleep(1)
+    threading.Thread(target=run, name="vigiefs-navigateur", daemon=True).start()
+
+
 def supervise(args, data_dir):
     _logging(data_dir, "superviseur.log")
     from . import service
+    if args.open_browser and os.environ.get("VIGIEFS_NO_BROWSER") != "1":
+        _open_browser_when_ready(args)
     args.data_dir = data_dir
     sup = service.Supervisor(
         service.worker_command(args), data_dir, mode=args.mode, hang_timeout=args.hang_timeout,
@@ -263,7 +282,6 @@ def restore_db(args, data_dir):
 def demo(args, data_dir):
     """Prépare le jeu fictif (une seule fois), ouvre le navigateur et lance VigieFS en mode supervisé."""
     from . import demo as demo_data
-    from . import service
     print("Préparation du jeu de démonstration…", flush=True)
     res = demo_data.create(data_dir)
     if res["created"]:
@@ -273,18 +291,7 @@ def demo(args, data_dir):
         print("  Jeu de démonstration déjà présent : réutilisé.")
     print(f"  Dossiers fictifs : {res['base']}\n"
           "  Pour tout effacer : arrêtez VigieFS puis supprimez le dossier de données de la démo.", flush=True)
-    if os.environ.get("VIGIEFS_NO_BROWSER") != "1":
-        url = f"{'https' if args.ssl_certfile else 'http'}://localhost:{args.port}/"
-        probe = service.probe_url("127.0.0.1", args.port, tls=bool(args.ssl_certfile))
-
-        def open_browser():
-            import webbrowser
-            for _ in range(120):
-                if service.http_probe(probe, timeout=2):
-                    webbrowser.open(url)
-                    return
-                time.sleep(1)
-        threading.Thread(target=open_browser, name="vigiefs-navigateur", daemon=True).start()
+    args.open_browser = True
     return supervise(args, data_dir)
 
 

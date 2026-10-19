@@ -68,9 +68,10 @@ class Engine:
     def start(self):
         # Les dossiers sont mis sous surveillance au premier cycle du planificateur, après une sonde
         # d'accès à délai limité : un partage réseau absent ne retarde pas le démarrage.
+        # Planificateur avant la garde : sinon elle le jugerait arrêté et lèverait une fausse alerte.
         self.monitor.start()
-        self.guard.start()
         self.restart_scheduler()
+        self.guard.start()
 
     def stop(self):
         self.stopping = True

@@ -2,21 +2,26 @@
 .SYNOPSIS
     Installe VigieFS en service Windows 24 h/24 : relance automatique, démarrage différé, récupération SCM.
 
-.EXAMPLE
-    # PowerShell administrateur, depuis le dossier vigiefs :
-    .\scripts\install-windows.ps1 -DataDir 'D:\VigieFS\data' -Port 8470 -ListenAll
+.DESCRIPTION
+    Le plus simple : double-cliquez sur INSTALLER-VigieFS.bat (questions guidées, élévation automatique).
+
+    Le programme est copié dans -InstallDir (par défaut C:\Program Files\VigieFS), les données vont dans
+    -DataDir (par défaut C:\ProgramData\VigieFS). Relancer l'installation d'une version plus récente met
+    VigieFS à jour sans toucher aux données.
+
+    Paquet « Windows Server » : Python (dossier runtime) et WinSW (tools\VigieFS-Service.exe) sont fournis,
+    aucun accès Internet n'est nécessaire. Depuis les sources : Python 3.10+ installé et accès à PyPI.
 
 .EXAMPLE
-    # Serveur sans accès Internet : fournir WinSW (https://github.com/winsw/winsw/releases, WinSW-x64.exe)
-    .\scripts\install-windows.ps1 -Mode winsw -WinSWExe 'C:\Outils\WinSW-x64.exe'
+    .\scripts\install-windows.ps1 -DataDir 'D:\VigieFS\data' -Port 8470 -ListenAll `
+        -ServiceAccount 'DOMAINE\svc-vigiefs' -ServicePassword '…'
 
 .EXAMPLE
     .\scripts\install-windows.ps1 -Uninstall      # supprime le service et les tâches (données conservées)
 
 .NOTES
     Modes (-Mode auto choisit dans cet ordre) :
-      winsw : service Windows natif via WinSW (licence MIT) — tools\VigieFS-Service.exe, -WinSWExe,
-              ou téléchargé depuis GitHub.
+      winsw : service Windows natif via WinSW (licence MIT) — fourni, -WinSWExe, ou téléchargé depuis GitHub.
       nssm  : si nssm.exe est présent dans le PATH.
       task  : tâche planifiée au démarrage + tâche de garde toutes les 5 minutes (sans service).
 
@@ -31,6 +36,7 @@
     un compte de service du domaine (droit « Ouvrir une session en tant que service ») plutôt que SYSTEM.
 #>
 param(
+    [string]$InstallDir = "$env:ProgramFiles\VigieFS",
     [string]$DataDir = "$env:ProgramData\VigieFS",
     [int]$Port = 8470,
     [switch]$ListenAll,
@@ -38,18 +44,29 @@ param(
     [string]$WinSWExe = '',
     [string]$ServiceAccount = '',
     [string]$ServicePassword = '',
+    [switch]$Interactive,
     [switch]$Uninstall
 )
 $ErrorActionPreference = 'Stop'
 $ServiceName = 'VigieFS'
-$root = Split-Path -Parent $PSScriptRoot
-Set-Location $root
-$python = "$root\.venv\Scripts\python.exe"
-$toolsDir = "$root\tools"
-$wrapper = "$toolsDir\VigieFS-Service.exe"
-$WinSWUrl = 'https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe'
+$src = Split-Path -Parent $PSScriptRoot
+$WinSWUrl = 'https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW.NET461.exe'
+
+function Set-Root([string]$dir) {
+    $script:root = $dir
+    $script:toolsDir = Join-Path $dir 'tools'
+    $script:wrapper = Join-Path $dir 'tools\VigieFS-Service.exe'
+    $bundled = Join-Path $dir 'runtime\python.exe'
+    $script:python = if (Test-Path $bundled) { $bundled } else { Join-Path $dir '.venv\Scripts\python.exe' }
+}
 
 function Esc([string]$s) { [System.Security.SecurityElement]::Escape($s) }
+
+function Ask([string]$question, [string]$default) {
+    $answer = Read-Host "$question [$default]"
+    if ([string]::IsNullOrWhiteSpace($answer)) { return $default }
+    return $answer.Trim()
+}
 
 function Stop-Existing {
     $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -101,18 +118,64 @@ function Set-Recovery {
     }
 }
 
+# ------------------------------------------------------------------ désinstallation
 if ($Uninstall) {
+    Set-Root $(if (Test-Path (Join-Path $InstallDir 'vigiefs')) { $InstallDir } else { $src })
     Remove-VigieFS
-    Write-Host 'VigieFS désinstallé (données conservées dans le dossier de données).' -ForegroundColor Green
+    Remove-Item "$env:PUBLIC\Desktop\VigieFS.url" -ErrorAction SilentlyContinue
+    Write-Host "VigieFS désinstallé. Programme conservé dans $root, données dans $DataDir (à supprimer au besoin)." -ForegroundColor Green
     return
 }
 
+# ------------------------------------------------------------------ questions (double-clic)
+if ($Interactive) {
+    Write-Host ''
+    Write-Host 'Installation de VigieFS — Entrée pour accepter la valeur proposée entre crochets.' -ForegroundColor Cyan
+    $InstallDir = Ask 'Dossier du programme' $InstallDir
+    $DataDir = Ask 'Dossier des données (base, journaux, sauvegardes)' $DataDir
+    $Port = [int](Ask "Port de l'interface web" "$Port")
+    $ListenAll = (Ask "Ouvrir l'interface aux autres postes du réseau ? (O/N)" $(if ($ListenAll) { 'O' } else { 'N' })) -match '^[oOyY]'
+    $acct = Ask 'Compte de service (vide = SYSTEM ; ex. DOMAINE\svc-vigiefs)' $ServiceAccount
+    if ($acct) {
+        $ServiceAccount = $acct
+        $secure = Read-Host "Mot de passe de $acct" -AsSecureString
+        $ServicePassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(
+            [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
+    }
+    Write-Host ''
+}
+
+Set-Root $InstallDir
 Stop-Existing
 
-Write-Host "==> Création de l'environnement Python" -ForegroundColor Cyan
-if (-not (Test-Path "$root\.venv")) { python -m venv "$root\.venv" }
-& $python -m pip install --upgrade pip | Out-Null
-& $python -m pip install -r "$root\requirements.txt"
+# ------------------------------------------------------------------ copie du programme
+$srcFull = (Resolve-Path $src).Path.TrimEnd('\')
+$dstFull = [IO.Path]::GetFullPath($InstallDir).TrimEnd('\')
+if ($srcFull -ne $dstFull) {
+    # Sécurités : la copie miroir ne doit jamais vider un dossier étranger ni le dossier source.
+    if ($srcFull.StartsWith("$dstFull\", 'OrdinalIgnoreCase') -or $dstFull.StartsWith("$srcFull\", 'OrdinalIgnoreCase')) {
+        throw "Le dossier d'installation ($dstFull) ne doit pas contenir le dossier décompressé ($srcFull), ni l'inverse."
+    }
+    $existing = Get-ChildItem -Path $dstFull -Force -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($existing -and -not (Test-Path (Join-Path $dstFull 'vigiefs\__init__.py'))) {
+        throw "Le dossier $dstFull n'est pas vide et ne contient pas VigieFS : choisissez un dossier dédié."
+    }
+    Write-Host "==> Copie du programme dans $InstallDir" -ForegroundColor Cyan
+    New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+    robocopy $src $InstallDir /MIR /XD data data-demo .venv __pycache__ /XF *.pyc /R:2 /W:2 /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "Copie impossible vers $InstallDir (robocopy code $LASTEXITCODE)" }
+}
+Get-ChildItem -Path $InstallDir -Recurse -File | Unblock-File
+Set-Root $InstallDir
+
+if (-not (Test-Path (Join-Path $root 'runtime\python.exe'))) {
+    Write-Host "==> Création de l'environnement Python (accès Internet requis)" -ForegroundColor Cyan
+    if (-not (Test-Path $python)) { python -m venv (Join-Path $root '.venv') }
+    & $python -m pip install --upgrade pip | Out-Null
+    & $python -m pip install -r (Join-Path $root 'requirements.txt')
+} else {
+    Write-Host '==> Python embarqué : aucun téléchargement nécessaire' -ForegroundColor Cyan
+}
 
 New-Item -ItemType Directory -Force -Path $DataDir, "$DataDir\logs" | Out-Null
 $hostAddr = if ($ListenAll) { '0.0.0.0' } else { '127.0.0.1' }
@@ -212,8 +275,13 @@ if ($ListenAll) {
     Write-Host '==> Ouverture du pare-feu' -ForegroundColor Cyan
     if (-not (Get-NetFirewallRule -DisplayName 'VigieFS' -ErrorAction SilentlyContinue)) {
         New-NetFirewallRule -DisplayName 'VigieFS' -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow | Out-Null
+    } else {
+        Set-NetFirewallRule -DisplayName 'VigieFS' -LocalPort $Port | Out-Null
     }
 }
+
+# Raccourci vers l'interface sur le bureau de tous les utilisateurs.
+"[InternetShortcut]`r`nURL=http://localhost:$Port/`r`n" | Set-Content -Path "$env:PUBLIC\Desktop\VigieFS.url" -Encoding ASCII
 
 Write-Host '==> Vérification du démarrage' -ForegroundColor Cyan
 $ok = $false
@@ -224,9 +292,11 @@ for ($i = 0; $i -lt 60 -and -not $ok; $i++) {
 Write-Host ''
 if ($ok) {
     Write-Host "VigieFS est installé et en service ($Mode). Interface : http://localhost:$Port/" -ForegroundColor Green
+    if ($Interactive) { Start-Process "http://localhost:$Port/" }
 } else {
     Write-Warning "VigieFS ne répond pas encore : consultez $DataDir\run\console.log et « python -m vigiefs status »."
 }
-Write-Host "Données : $DataDir"
-Write-Host "État : & '$python' -m vigiefs status --data '$DataDir'"
-Write-Host "Arrêt volontaire : Stop-Service $ServiceName  (ou -m vigiefs stop --data '$DataDir')"
+Write-Host "Programme : $root"
+Write-Host "Données   : $DataDir"
+Write-Host "État      : & '$python' -m vigiefs status --data '$DataDir'"
+Write-Host "Arrêt     : Stop-Service $ServiceName  (arrêt volontaire, jamais relancé automatiquement)"

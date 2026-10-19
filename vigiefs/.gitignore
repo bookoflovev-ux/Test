@@ -5,3 +5,4 @@ data/
 .pytest_cache/
 data-demo/
 tools/
+dist/

@@ -338,3 +338,11 @@ def test_demo_dataset(tmp_path):
     assert max(len(os.path.join(dp, f)) for dp, _, files in os.walk(share["path"]) for f in files) < 400
     assert db.query_one("SELECT COUNT(*) AS n FROM quotas")["n"] == 1
     assert db.get_setting("archive")["root"].endswith("demo-archives")
+
+
+def test_start_raises_no_false_repair(eng):
+    db, _, engine, _ = eng
+    engine.start()
+    engine.guard.check()
+    assert db.query_one("SELECT COUNT(*) AS n FROM alerts WHERE fingerprint LIKE 'service:repair:%'")["n"] == 0
+    assert {c["name"]: c for c in engine.guard.snapshot()["components"]}["scheduler"]["repairs"] == 0

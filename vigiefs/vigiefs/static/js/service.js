@@ -106,7 +106,7 @@ async function viewService(view) {
         const d = formData(f);
         await api('/api/service/action', { method: 'POST', body: { action: 'stop', reason: d.reason || '', confirm: d.confirm || '' } });
         clearTimers();
-        view.innerHTML = emptyState('stop', 'VigieFS est arrêté', `Arrêt volontaire enregistré. Pour le relancer : <code>Start-Service VigieFS</code> (Windows), <code>systemctl start vigiefs</code> (Linux) ou <code>start-vigiefs.bat</code>.`);
+        view.innerHTML = emptyState('stop', 'VigieFS est arrêté', `Arrêt volontaire enregistré. Pour le relancer : <code>Start-Service VigieFS</code> (Windows), <code>systemctl start vigiefs</code> (Linux) ou <code>lancer-vigiefs.bat</code>.`);
       } }),
   };
   const bindHead = () => $$('[data-sact]').forEach(b => { b.onclick = guard(() => actions[b.dataset.sact]()); });

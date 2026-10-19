@@ -1,0 +1,35 @@
+VigieFS {version} — Paquet PC Windows (essai et usage sur un poste)
+====================================================================
+
+Contenu : VigieFS et Python {python} embarqué : rien d'autre à installer.
+Prérequis : Windows 10 ou 11 (64 bits).
+
+DÉMARRAGE
+1. Clic droit sur le fichier ZIP > Propriétés > cochez « Débloquer » > OK,
+   puis « Extraire tout » (par exemple dans Documents).
+2. Double-cliquez sur l'un des lanceurs :
+
+   demo-vigiefs.bat    ESSAI avec des données fictives (dossier data-demo) : deux clients,
+                       doublons, fichiers inutiles, documents anciens, documents abîmés, chemin
+                       trop long, données personnelles fictives, quota dépassé.
+                       Aucun autre fichier de l'ordinateur n'est lu ni modifié.
+
+   lancer-vigiefs.bat  UTILISATION sur vos propres dossiers (dossier data, vide au départ) :
+                       ajoutez vos clients et dossiers dans l'interface.
+
+3. Le navigateur s'ouvre sur http://localhost:8470/ (sinon ouvrez cette adresse) :
+   créez le compte administrateur sur l'écran « Première installation ».
+
+ARRÊT
+- Ctrl+C dans la fenêtre noire (ou arreter-vigiefs.bat). Tant que la fenêtre est ouverte,
+  VigieFS se relance seul en cas d'incident.
+- Pour tout effacer : supprimez le dossier data-demo (essai) ou data (usage).
+
+À SAVOIR SUR UN PC
+- FSRM et Active Directory sont absents : les quotas stricts passent par le verrouillage VigieFS
+  et la création de groupes AD n'est pas disponible.
+- Certains contrôles de « Santé du serveur » demandent les droits administrateur.
+- Port déjà utilisé : lancez  lancer-vigiefs.bat --port 8480  puis ouvrez http://localhost:8480/
+- Pour un fonctionnement permanent en service Windows, utilisez le paquet « Windows Server ».
+
+Documentation complète : README.md. Licence de Python : runtime\LICENSE.txt.

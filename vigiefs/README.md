@@ -114,19 +114,61 @@ Explorateur avec ACL NTFS, rôles (lecture seule / opérateur / administrateur),
 |---|---|
 | ![](docs/reparation.png) | ![](docs/theme-sombre.png) |
 
+## Paquets Windows prêts à l'emploi
+
+`python scripts/build-packages.py` fabrique deux archives autonomes : **Python 3.13 embarqué**
+(paquet NuGet officiel de la Python Software Foundation) et bibliothèques incluses, donc rien à
+installer et aucun accès Internet nécessaire sur la machine cible.
+
+| Paquet | Pour | Lanceurs |
+|---|---|---|
+| `VigieFS-<version>-WindowsServer.zip` | Windows Server 2016 → 2025 : service 24 h/24 (WinSW inclus) | `INSTALLER-VigieFS.bat`, `DESINSTALLER-VigieFS.bat` |
+| `VigieFS-<version>-PC-Windows.zip` | Windows 10 / 11 : essai ou usage sur un poste | `demo-vigiefs.bat`, `lancer-vigiefs.bat`, `arreter-vigiefs.bat` |
+
+Chaque archive contient un `LISEZ-MOI.txt` pas à pas. Avant d'extraire : clic droit sur le ZIP ›
+Propriétés › **Débloquer**.
+
+## Installation sur Windows Server
+
+**Avec le paquet Windows Server** : extrayez l'archive sur un disque local, double-cliquez sur
+`INSTALLER-VigieFS.bat` et répondez aux questions (dossiers, port, accès réseau, compte de
+service). Le programme est copié dans `C:\Program Files\VigieFS`, les données dans
+`C:\ProgramData\VigieFS`, le service démarre et le navigateur s'ouvre ; un raccourci « VigieFS »
+est posé sur le bureau. Relancer `INSTALLER-VigieFS.bat` depuis une version plus récente met à jour
+sans toucher aux données.
+
+**En ligne de commande** (PowerShell administrateur, depuis le dossier extrait) :
+
+```powershell
+.\scripts\install-windows.ps1 -DataDir 'D:\VigieFS\data' -Port 8470 -ListenAll `
+    -ServiceAccount 'DOMAINE\svc-vigiefs' -ServicePassword '…'
+```
+
+- **Service Windows** via [WinSW](https://github.com/winsw/winsw) (inclus dans le paquet, sinon
+  téléchargé ou fourni avec `-WinSWExe`), à défaut [NSSM](https://nssm.cc) s'il est dans le PATH,
+  sinon tâche planifiée au démarrage + tâche de garde (`-Mode winsw|nssm|task` pour forcer).
+  Démarrage automatique **différé**, actions de récupération du service (relance à 10 s, 30 s, 60 s).
+- Depuis les sources (sans Python embarqué), le script crée un environnement `.venv` : Python 3.10
+  à 3.13 et accès à PyPI requis.
+- `-InstallDir` (défaut `C:\Program Files\VigieFS`) doit être un dossier dédié ; `-Uninstall`
+  supprime le service et les tâches (programme et données conservés).
+- Le compte de service doit pouvoir **lire** les dossiers supervisés (et **modifier** pour la
+  quarantaine, l'explorateur, les quotas stricts et l'application des droits ; module
+  ActiveDirectory pour créer les groupes). Pour des partages distants, préférez un compte de
+  service du domaine (droit « Ouvrir une session en tant que service ») à SYSTEM.
+- `-ListenAll` ouvre l'interface au réseau (et le port du pare-feu). Sinon elle n'écoute
+  que sur `127.0.0.1`.
+
+Au premier accès, l'écran **« Première installation »** crée le compte administrateur.
+
 ## Essayer VigieFS sur un poste (démonstration)
 
-Pour découvrir VigieFS sur un PC Windows, un Mac ou un poste Linux, sans serveur ni vrais dossiers :
+- **Windows** : avec le paquet PC, double-cliquez sur `demo-vigiefs.bat` (Python inclus). Depuis
+  les sources, le même lanceur crée un environnement avec Python 3.10 à 3.13 s'il est installé.
+- **macOS / Linux** : `./demo-vigiefs.sh` (Python 3.10 à 3.13 requis).
 
-1. Installez **Python 3.13** (ou 3.10 à 3.12) — sous Windows depuis
-   [python.org](https://www.python.org/downloads/windows/), en cochant *Add python.exe to PATH*.
-2. Récupérez le dossier `vigiefs` (archive ZIP de la branche sur GitHub, ou `git clone`), puis :
-   - **Windows** : double-cliquez sur `demo-vigiefs.bat` ;
-   - **macOS / Linux** : `./demo-vigiefs.sh`.
-3. Le premier lancement installe les dépendances (1 à 2 minutes), crée un **jeu fictif** dans
-   `data-demo/` et ouvre le navigateur sur <http://localhost:8470/>. Créez le compte
-   administrateur sur l'écran « Première installation ».
-
+Le premier lancement crée un **jeu fictif** dans `data-demo/` et ouvre le navigateur sur
+<http://localhost:8470/> ; créez le compte administrateur sur l'écran « Première installation ».
 Le jeu fictif (≈ 8 Mo, deux clients) contient de quoi essayer chaque fonction : doublons,
 fichiers inutiles, documents anciens à archiver, documents abîmés à réparer, un chemin de plus
 de 260 caractères vu du réseau, des noms non conformes, un fichier interdit, des données
@@ -137,35 +179,7 @@ démarrent seules ; lancez ensuite *Analyser les droits*, *Proposition AGDLP*, *
 `Ctrl+C` dans la fenêtre arrête VigieFS ; supprimer le dossier `data-demo` efface tout. Aucun
 autre fichier du poste n'est lu ni modifié. Sur un poste, FSRM et Active Directory sont absents :
 les quotas stricts passent par le verrouillage VigieFS et la création de groupes AD est indisponible.
-
-## Installation sur Windows Server
-
-Prérequis : **Python 3.10+** (cocher « Add python.exe to PATH » à l'installation).
-
-**Essai rapide** : double-cliquez sur `start-vigiefs.bat` (mode console supervisé, relance
-automatique), puis ouvrez <http://localhost:8470/>. `stop-vigiefs.bat` l'arrête.
-
-**Installation 24 h/24** (PowerShell administrateur, depuis le dossier `vigiefs`) :
-
-```powershell
-.\scripts\install-windows.ps1 -DataDir 'D:\VigieFS\data' -Port 8470 -ListenAll `
-    -ServiceAccount 'DOMAINE\svc-vigiefs' -ServicePassword '…'
-```
-
-- **Service Windows** via [WinSW](https://github.com/winsw/winsw) (téléchargé, ou fourni hors
-  ligne avec `-WinSWExe`), à défaut [NSSM](https://nssm.cc) s'il est dans le PATH, sinon tâche
-  planifiée au démarrage + tâche de garde (`-Mode winsw|nssm|task` pour forcer). Démarrage
-  automatique **différé**, actions de récupération du service (relance à 10 s, 30 s, 60 s).
-- Relancer le script met VigieFS à jour (arrêt propre, dépendances, réinstallation du service).
-  `-Uninstall` supprime le service et les tâches (les données sont conservées).
-- Le compte de service doit pouvoir **lire** les dossiers supervisés (et **modifier** pour la
-  quarantaine, l'explorateur, les quotas stricts et l'application des droits ; module
-  ActiveDirectory pour créer les groupes). Pour des partages distants, préférez un compte de
-  service du domaine (droit « Ouvrir une session en tant que service ») à SYSTEM.
-- `-ListenAll` ouvre l'interface au réseau (et le port du pare-feu). Sinon elle n'écoute
-  que sur `127.0.0.1`.
-
-Au premier accès, l'écran **« Première installation »** crée le compte administrateur.
+`lancer-vigiefs.bat` lance VigieFS sur vos propres dossiers (dossier `data`).
 
 ### Linux (systemd)
 
@@ -312,9 +326,12 @@ vigiefs/
 │   └── static/         Interface web (HTML/CSS/JS natif en modules, aucune dépendance externe)
 ├── integrations/datto-rmm/VigieFS-Monitor.ps1
 ├── scripts/install-windows.ps1    Service Windows (WinSW / NSSM / tâche + garde)
+├── scripts/build-packages.py      Paquets Windows Server / PC avec Python embarqué
+├── packaging/                     LISEZ-MOI des paquets
 ├── scripts/install-linux.sh       Service systemd
 ├── scripts/vigiefs.service
-├── start-vigiefs.bat, stop-vigiefs.bat
+├── INSTALLER-VigieFS.bat, DESINSTALLER-VigieFS.bat   Installation du service (double-clic)
+├── lancer-vigiefs.bat, arreter-vigiefs.bat
 ├── demo-vigiefs.bat, demo-vigiefs.sh   Essai sur un poste avec le jeu fictif
 └── tests/
 ```

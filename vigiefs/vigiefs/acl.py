@@ -10,12 +10,16 @@ Les mêmes constructeurs de commandes servent à l'exécution directe et à la g
 pour que ce qui est relu dans un script soit exactement ce qui serait exécuté.
 """
 
-import grp
 import os
-import pwd
 import re
 import time
 from collections import defaultdict
+
+try:  # comptes POSIX ; absents sous Windows, où les droits NTFS passent par PowerShell
+    import grp
+    import pwd
+except ImportError:
+    grp = pwd = None
 
 from . import system
 
