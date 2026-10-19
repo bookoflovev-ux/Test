@@ -495,3 +495,5 @@ ol.stepper .step.current .dot { border-color: var(--accent, #2563eb); color: var
 ol.stepper .step.done .dot { background: var(--good); border-color: var(--good); color: #fff; }
 ol.stepper .step + .step::before { content: ""; width: 18px; height: 1.5px; background: var(--border); margin-right: 4px; }
 #rd-logs .err { color: var(--critical, #c62828); }
+#rd-logs .warn { color: var(--warning-ink); }
+#rd-logs .ok { color: var(--good-ink); }

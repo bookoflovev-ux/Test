@@ -64,5 +64,6 @@ SAUVEGARDE
 SUPERVISION DATTO RMM
 - Composant « Monitor » : integrations\datto-rmm\VigieFS-Monitor.ps1 (voir README.md).
 
+{reparedocs}
 Documentation complète : README.md. Licences : runtime\LICENSE.txt (Python),
 tools\WinSW-LICENSE.txt (WinSW, MIT).

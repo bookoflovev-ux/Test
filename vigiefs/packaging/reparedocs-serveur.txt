@@ -1,0 +1,7 @@
+RÉPARATION DE DOCUMENTS
+- Le moteur RepareDocs {rdver} est inclus (sous-dossier RepareDocs, avec son propre Python) :
+  VigieFS le détecte seul (menu « Réparation de fichiers »), en masse ou fichier par fichier.
+- Les fichiers réparés sont écrits sur un autre disque que les fichiers analysés (par défaut
+  X:\RepareDocs-sorties) ; dossier réglable dans Paramètres > Stockage & réparation.
+- Microsoft Office ne peut pas être piloté depuis le service Windows ; LibreOffice et Ghostscript,
+  s'ils sont installés sur le serveur, sont utilisés.

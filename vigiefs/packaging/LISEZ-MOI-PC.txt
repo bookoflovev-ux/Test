@@ -32,4 +32,5 @@ ARRÊT
 - Port déjà utilisé : lancez  lancer-vigiefs.bat --port 8480  puis ouvrez http://localhost:8480/
 - Pour un fonctionnement permanent en service Windows, utilisez le paquet « Windows Server ».
 
+{reparedocs}
 Documentation complète : README.md. Licence de Python : runtime\LICENSE.txt.

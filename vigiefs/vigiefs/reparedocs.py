@@ -11,12 +11,14 @@ avec le même protocole que RepareDocs Web :
                 le moteur publie son état dans « etat » et s'arrête proprement si le fichier « arret » existe
     resultats   liste paginée des fichiers traités (le suivi SQLite est d'abord lu directement)
 
-Dossier de sortie produit par le moteur : 1-REPARES\, 3-ORIGINAUX_ENDOMMAGES\, RAPPORT.html, journal.txt,
-etat_analyse_v2.sqlite (table « fichiers »).
+Dossier de sortie produit par le moteur : 1-REPARES\, 2-REPARES_PARTIELLEMENT\, 3-ORIGINAUX_ENDOMMAGES\,
+RAPPORT.html, rapport.csv, journal.txt, etat_analyse_v2.sqlite (table « fichiers »). Le moteur refuse une sortie
+sur le disque analysé (option allow_same_volume) : la sortie par défaut est celle qu'il propose sur un autre disque.
 """
 
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -37,6 +39,7 @@ OPTION_DEFAULTS = {
 }
 OPTION_BOUNDS = {"workers": (1, 32), "disk_search": (64, 65536), "disk_workers": (1, 8)}
 HEARTBEAT_SEC = 25
+RESTORE_DONE = re.compile(r"Remise en place terminée : (\d+) remplacé\(s\), (\d+) ignoré\(s\), (\d+) erreur\(s\)")
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
@@ -45,7 +48,10 @@ class RepareDocsError(RuntimeError):
 
 
 def clean_options(raw, individual=False):
-    """Options du moteur validées (types, bornes) ; une copie isolée n'a ni disque ni cliché à relire."""
+    """Options du moteur validées (types, bornes).
+
+    Réparation individuelle : le moteur travaille sur une copie isolée (dans les données de VigieFS), sans disque ni
+    cliché à relire ; sa sortie est à côté de cette copie, donc sur le même disque, ce qu'il faut autoriser."""
     opts = dict(OPTION_DEFAULTS)
     for k, v in (raw or {}).items():
         if k not in OPTION_DEFAULTS:
@@ -61,7 +67,7 @@ def clean_options(raw, individual=False):
         else:
             opts[k] = bool(v)
     if individual:
-        opts.update(use_disk=False, use_vss=False, resume=False, analyse_only=False)
+        opts.update(use_disk=False, use_vss=False, resume=False, analyse_only=False, allow_same_volume=True)
     return opts
 
 
@@ -195,10 +201,21 @@ class RepareDocs:
                 return st
         return None
 
-    def default_output(self, label):
-        root = (self.settings().get("reparedocs_output") or "").strip() or os.path.join(self.base, "sorties")
-        safe = "".join(c if c.isalnum() or c in "-_ " else "_" for c in label).strip() or "traitement"
-        return os.path.join(root, f"{safe} {time.strftime('%Y-%m-%d %H%M')}")
+    def default_output(self, label, source=None):
+        """Dossier de sortie par défaut, stable pour un même dossier analysé (le moteur y reprend son suivi et ne
+        retraite pas les fichiers inchangés) : dossier configuré, sinon celui que RepareDocs propose sur un autre
+        disque que les fichiers analysés, sinon les données de VigieFS."""
+        root = (self.settings().get("reparedocs_output") or "").strip()
+        if not root and source:
+            try:
+                suggestion = (self.check_paths(source, "") or {}).get("suggestion")
+            except RepareDocsError:
+                suggestion = None
+            if suggestion:
+                root = os.path.dirname(suggestion.rstrip("\\/"))
+        root = root or os.path.join(self.base, "sorties")
+        safe = "".join(c if c.isalnum() or c in "-_ " else "_" for c in label).strip()[:80] or "traitement"
+        return os.path.join(root, safe)
 
     def start(self, kind, source, output, options, actor, share=None, origin=None, skip_roots=()):
         if kind not in ("masse", "individuel", "restaurer"):
@@ -262,13 +279,17 @@ class RepareDocs:
         status = run["status"]
         if status == "running" and not alive:
             done, error = st.get("done"), st.get("error")
+            restored = self._restore_summary(st) if run["kind"] == "restaurer" else None
             if done:
                 status = "stopped" if done.get("stopped") else "done"
+            elif restored is not None and not error:
+                status = "done"           # la remise en place ne publie pas de bilan « done », seulement son journal
             else:
                 status = "failed"
                 error = error or ("Le moteur s'est arrêté sans prévenir (serveur redémarré, processus fermé ?). "
-                                  "Relancez : le traitement reprend là où il s'est arrêté.")
-            summary = (done or {}).get("summary") or (st.get("progress") or {}).get("counts") or {}
+                                  "Relancez : le traitement reprend là où il s'est arrêté."
+                                  + self._console_tail(run.get("task_dir")))
+            summary = restored or (done or {}).get("summary") or (st.get("progress") or {}).get("counts") or {}
             self.db.execute("UPDATE reparedocs_runs SET status=?, finished_at=?, summary=?, error=? WHERE id=?",
                             (status, time.time(), json.dumps(summary), error, run["id"]))
             run.update(status=status, summary=summary, error=error)
@@ -281,6 +302,27 @@ class RepareDocs:
         return {**run, "alive": alive, "phase": st.get("phase"), "progress": st.get("progress"), "scan": st.get("scan"),
                 "disk": st.get("disk"), "done": st.get("done"), "engine_error": st.get("error"),
                 "logs": (st.get("logs") or [])[-300:], "staging": staging, "journal": journal}
+
+    @staticmethod
+    def _restore_summary(st):
+        for entry in reversed(st.get("logs") or []):
+            m = RESTORE_DONE.search(str((entry or {}).get("line") or ""))
+            if m:
+                return {"remis": int(m.group(1)), "ignores": int(m.group(2)), "erreurs": int(m.group(3))}
+        return None
+
+    @staticmethod
+    def _console_tail(task_dir):
+        """Dernière ligne utile de la console du moteur (erreur Python au démarrage, composant manquant…)."""
+        try:
+            with open(os.path.join(task_dir or "", "console.log"), "rb") as fh:
+                fh.seek(0, os.SEEK_END)
+                fh.seek(max(0, fh.tell() - 4096))
+                lines = [ln.strip() for ln in fh.read().decode("utf-8", "replace").splitlines()]
+        except OSError:
+            return ""
+        lines = [ln for ln in lines if ln and not ln.startswith("===")]
+        return f" Dernier message du moteur : {lines[-1][:300]}" if lines else ""
 
     def stop(self, run):
         if run and run.get("task_dir"):

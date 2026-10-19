@@ -62,7 +62,7 @@ def register(app, c):
     def rd_check(body: RunIn, user=Depends(operator)):
         source, output = _paths(body, user)
         try:
-            return rd.check_paths(source, output)
+            return {**rd.check_paths(source, output), "source": source, "output": output}
         except RepareDocsError as exc:
             fail(exc)
 
@@ -81,7 +81,7 @@ def register(app, c):
             raise HTTPException(403, "Dossier de sortie personnalisé réservé aux administrateurs")
         label = (share["name"] + (" - " + body.path.replace("/", " - ") if body.path else "")) if share else \
             os.path.basename(source.rstrip("\\/")) or "analyse"
-        output = body.output.strip().strip('"') if body.output else rd.default_output(label)
+        output = body.output.strip().strip('"') if body.output else rd.default_output(label, source)
         return source, output
 
     @app.get("/api/reparedocs/runs")

@@ -1,0 +1,5 @@
+RÉPARATION DE DOCUMENTS
+- Le moteur RepareDocs {rdver} est inclus (sous-dossier RepareDocs, avec son propre Python) :
+  menu « Réparation de fichiers », en masse ou fichier par fichier.
+- RepareDocs n'écrit jamais sur le disque qu'il analyse : avec un seul disque (C:), cochez
+  « Autoriser la sortie sur le disque analysé » au lancement.

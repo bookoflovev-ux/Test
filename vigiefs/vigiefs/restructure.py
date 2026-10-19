@@ -567,7 +567,6 @@ class Mover:
         self.opts = {**OPTION_DEFAULTS, **(options or {})}
         self.cancel = cancel
         self.robocopy = system.IS_WINDOWS if use_robocopy is None else use_robocopy
-        os.makedirs(log_dir, exist_ok=True)
 
     def _check(self):
         if self.cancel is not None and self.cancel():
@@ -587,6 +586,7 @@ class Mover:
         return cmd
 
     def _run_robocopy(self, cmd):
+        os.makedirs(self.log_dir, exist_ok=True)     # journal robocopy (/UNILOG+) ; jamais créé par script()
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
                                 creationflags=system.NO_WINDOW)
         while True:

@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from vigiefs.api import create_app  # noqa: E402
-from vigiefs.reparedocs import clean_options  # noqa: E402
+from vigiefs.reparedocs import RepareDocs, clean_options  # noqa: E402
 
 PASSWORD = "Sup3r-Secret!"
 FAKE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fake_reparedocs")
@@ -75,7 +75,9 @@ def test_engine_missing(tmp_path):
 def test_mass_run_results_report_and_restore(env):
     c, app, sid, root = env
     info = c.get("/api/reparedocs/info").json()
-    assert info["available"] and info["version"] == "2.5-test" and info["phases"][0] == "Inventaire"
+    assert info["available"] and info["version"] == "2.5-test" and info["phases"][0] == "Recensement"
+    assert info["defaults"]["workers"] == 3 and info["tools"]["office"] == {"word": False, "excel": False,
+                                                                            "powerpoint": False}
     run_id = c.post("/api/reparedocs/runs", json={"share_id": sid, "options": {"workers": 2}}).json()["run_id"]
     st = wait_run(c, run_id)
     assert st["status"] == "done" and st["summary"] == {"OK": 1, "REPARE": 1, "IRRECUPERABLE": 1}
@@ -98,7 +100,9 @@ def test_mass_run_results_report_and_restore(env):
     assert c.post(f"/api/reparedocs/runs/{run_id}/restore", json={"confirm": "oui"}).status_code == 400
     new_id = c.post(f"/api/reparedocs/runs/{run_id}/restore", json={"confirm": "REMETTRE"}).json()["run_id"]
     st = wait_run(c, new_id)
-    assert st["kind"] == "restaurer" and st["status"] == "done"
+    # Comme le vrai moteur, la remise en place ne publie que son journal : le bilan en est extrait.
+    assert st["kind"] == "restaurer" and st["status"] == "done" and st["error"] is None
+    assert st["summary"] == {"remis": 1, "ignores": 0, "erreurs": 0}
     assert (root / "Contrats" / "contrat abime.docx").read_bytes() == b"REPARE:PK abime"
     out = st["output"]
     assert open(os.path.join(out, "3-ORIGINAUX_ENDOMMAGES", "Contrats", "contrat abime.docx"), "rb").read() == b"PK abime"
@@ -118,10 +122,41 @@ def test_stop_and_single_mass_run(env, monkeypatch):
     assert st["status"] == "stopped"
 
 
-def test_output_rules(env):
+def test_output_rules(env, tmp_path, monkeypatch):
     c, app, sid, root = env
     r = c.post("/api/reparedocs/runs", json={"source": str(root), "output": str(root / "sortie")})
     assert r.status_code == 400 and "ne doit pas se trouver dans le dossier analysé" in r.json()["detail"]
+    # Sortie par défaut : celle que RepareDocs propose sur un autre disque, stable pour un même dossier (reprise).
+    monkeypatch.setenv("FAKE_RD_SUGGEST_ROOT", str(tmp_path / "autre-disque"))
+    chk = c.post("/api/reparedocs/check", json={"share_id": sid, "path": "Contrats"}).json()
+    expected = str(tmp_path / "autre-disque" / "RepareDocs-sorties" / "Commun - Contrats")
+    assert chk["output"] == expected and chk["source_ok"] and chk["same_volume"] is False
+    run_id = c.post("/api/reparedocs/runs", json={"share_id": sid, "path": "Contrats"}).json()["run_id"]
+    st = wait_run(c, run_id)
+    assert st["status"] == "done" and st["output"] == expected
+    assert c.post("/api/reparedocs/check", json={"share_id": sid, "path": "Contrats"}).json()["previous"] is True
+
+
+def test_same_volume_refused_unless_allowed(env, monkeypatch):
+    c, app, sid, root = env
+    monkeypatch.setenv("FAKE_RD_SAME_VOLUME", "1")
+    assert c.post("/api/reparedocs/check", json={"share_id": sid}).json()["same_volume"] is True
+    st = wait_run(c, c.post("/api/reparedocs/runs", json={"share_id": sid}).json()["run_id"])
+    assert st["status"] == "failed" and "même disque" in st["error"]
+    st = wait_run(c, c.post("/api/reparedocs/runs", json={"share_id": sid, "options": {"allow_same_volume": True}})
+                  .json()["run_id"])
+    assert st["status"] == "done" and st["summary"]["REPARE"] == 1
+    # La réparation individuelle travaille sur une copie dans les données de VigieFS : toujours autorisée.
+    st = wait_run(c, c.post("/api/reparedocs/upload?filename=lettre abime.docx", content=b"PK").json()["run_id"])
+    assert st["status"] == "done" and st["options"]["allow_same_volume"] is True
+
+
+def test_engine_crash_reports_console(tmp_path):
+    # Moteur arrêté avant d'avoir publié son état (composant manquant…) : l'erreur cite sa dernière ligne de console.
+    (tmp_path / "console.log").write_text("=== lancement\nTraceback (most recent call last):\n"
+                                          "ModuleNotFoundError: No module named 'fitz'\n", encoding="utf-8")
+    assert RepareDocs._console_tail(str(tmp_path)).endswith("No module named 'fitz'")
+    assert RepareDocs._console_tail(str(tmp_path / "absent")) == ""
 
 
 def test_individual_upload_and_share_file(env):

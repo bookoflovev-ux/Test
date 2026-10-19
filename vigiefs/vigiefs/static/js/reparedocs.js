@@ -14,6 +14,7 @@ const RD_RUN_STATUS = { running: ['info', 'En cours'], done: ['ok', 'Terminé'],
 const RD_KIND = { masse: 'Réparation en masse', individuel: 'Réparation individuelle', restaurer: 'Remise en place' };
 const rdTone = s => (RD_GROUPS.find(g => g.st.includes(s)) || RD_GROUPS[5]).tone;
 const rdBadge = s => `<span class="sev ${rdTone(s)}">${esc(RD_LABEL[s] || s)}</span>`;
+const rdOffice = tools => Object.entries((tools || {}).office || {}).filter(([, v]) => v).map(([k]) => ({ word: 'Word', excel: 'Excel', powerpoint: 'PowerPoint' }[k] || k));
 const rdCounts = c => { const g = {}; RD_GROUPS.forEach(x => { g[x.key] = x.st.reduce((a, s) => a + ((c || {})[s] || 0), 0); }); return g; };
 
 let rdInfoCache = null;
@@ -34,10 +35,12 @@ function rdEngineBlock(info) {
       ou indiquez son dossier dans Paramètres › Stockage & réparation.</div></div>`;
   }
   const tools = info.tools || {};
+  const office = rdOffice(tools);
   return `<dl class="kv">
     <dt>Version</dt><dd>RepareDocs ${esc(info.version || '?')} <span class="cell-sub mono">${esc(info.dir || '')}</span></dd>
     <dt>Droits</dt><dd>${info.admin ? '<span class="sev ok">Administrateur</span>' : '<span class="sev warning">Sans droits administrateur</span><div class="cell-sub">La relecture directe du disque (données décalées) est indisponible.</div>'}</dd>
-    <dt>Outils</dt><dd><span class="pill ${tools.libreoffice ? 'on' : ''}">LibreOffice ${tools.libreoffice ? '✓' : '—'}</span> <span class="pill ${tools.ghostscript ? 'on' : ''}">Ghostscript ${tools.ghostscript ? '✓' : '—'}</span> <span class="pill ${tools.office && Object.keys(tools.office).length && !info.session0 ? 'on' : ''}">Microsoft Office ${tools.office && Object.keys(tools.office).length && !info.session0 ? '✓' : '—'}</span></dd>
+    <dt>Outils</dt><dd><span class="pill ${tools.libreoffice ? 'on' : ''}">LibreOffice ${tools.libreoffice ? `✓ ${esc(tools.libreoffice)}` : '—'}</span> <span class="pill ${tools.ghostscript ? 'on' : ''}">Ghostscript ${tools.ghostscript ? '✓' : '—'}</span> <span class="pill ${office.length && !info.session0 ? 'on' : ''}">Microsoft Office ${office.length ? (info.session0 ? '— (service)' : '✓ ' + office.join(', ')) : '—'}</span>
+      ${office.length && info.session0 ? '<div class="cell-sub">Office ne peut pas être piloté depuis un service Windows : lancez VigieFS dans une session ouverte pour l\'utiliser.</div>' : ''}</dd>
   </dl>`;
 }
 
@@ -47,11 +50,12 @@ async function rdLaunch({ shareId = null, path = '' } = {}) {
   if (!info.available) return toast(info.error || 'RepareDocs est introuvable : voir Paramètres › Stockage & réparation', 'error');
   const d = info.defaults || {};
   const sw = (n, label, hint, on = true) => `<label class="check" style="align-items:flex-start"><input type="checkbox" name="${n}"${on ? ' checked' : ''}> <span>${label}${hint ? `<span class="cell-sub" style="display:block;font-weight:400">${hint}</span>` : ''}</span></label>`;
-  modal({ title: 'Réparation en masse avec RepareDocs', size: 'lg', submit: 'Démarrer',
+  const form = modal({ title: 'Réparation en masse avec RepareDocs', size: 'lg', submit: 'Démarrer',
     body: `<div class="form-grid">
       ${field('Dossier supervisé', sel('share_id', shares.map(s => [s.id, `${s.client_name} › ${s.name}`]), shareId || (shares[0] && shares[0].id), 'id="rd-share"'))}
       ${field('Sous-dossier (facultatif)', inp('path', path, 'text', 'placeholder="ex. Comptabilité/2024"'), 'Relatif au dossier supervisé ; vide = tout le dossier.')}
-      ${can('admin') ? field('Dossier de sortie (facultatif)', inp('output', '', 'text', 'placeholder="sur un autre disque de préférence, ex. E:\\RepareDocs\\Sorties"'), 'Vide = dossier de sortie par défaut de VigieFS. Ne jamais choisir un dossier dans le dossier analysé.', true) : ''}
+      ${can('admin') ? field('Dossier de sortie (facultatif)', inp('output', '', 'text', 'placeholder="sur un autre disque de préférence, ex. E:\\RepareDocs\\Sorties"'), 'Vide = dossier proposé ci-dessous. Jamais dans le dossier analysé.', true) : ''}
+      <div class="field full" id="rd-check"><div class="small muted">Contrôle des dossiers par RepareDocs…</div></div>
       <div class="field full"><label>Types de fichiers</label><div class="btn-row">${[['pdf', 'PDF'], ['word', 'Word'], ['excel', 'Excel'], ['powerpoint', 'PowerPoint']].map(([k, l]) => `<label class="check"><input type="checkbox" name="kind_${k}" checked> ${l}</label>`).join('')}</div></div>
       <div class="field full"><label>Mode</label>${seg('mode', [['repair', 'Analyse et réparation'], ['analyse', 'Analyse seule (aucune réparation)']], 'repair')}</div>
       <div class="field full"><label>Moteurs</label><div class="grid cols-2" style="gap:6px 20px">
@@ -63,6 +67,7 @@ async function rdLaunch({ shareId = null, path = '' } = {}) {
         ${sw('resume', 'Reprendre un traitement interrompu', '')}
         ${sw('deep', 'Analyse approfondie des PDF', 'Plus lent.', false)}
         ${sw('office_check_legacy', 'Contrôler les .doc/.xls/.ppt sains par Office', 'Très lent.', false)}
+        ${sw('allow_same_volume', 'Autoriser la sortie sur le disque analysé', 'Sinon RepareDocs refuse : il n\'écrit jamais sur ce disque pendant la récupération. Autorisé, il prépare les résultats sur un autre disque si possible, puis les déplace.', false)}
       </div></div>
       ${field('Fichiers traités en parallèle', inp('workers', d.workers || 4, 'number', 'min="1" max="32"'))}
       ${field('Relectures disque en parallèle', inp('disk_workers', d.disk_workers || 3, 'number', 'min="1" max="8"'))}
@@ -73,11 +78,36 @@ async function rdLaunch({ shareId = null, path = '' } = {}) {
       const v = formData(f);
       const opts = { kinds: ['pdf', 'word', 'excel', 'powerpoint'].filter(k => v['kind_' + k]), analyse_only: v.mode === 'analyse',
         workers: Number(v.workers), disk_workers: Number(v.disk_workers), disk_search: Number(v.disk_search) };
-      ['use_disk', 'use_vss', 'use_office', 'use_lo', 'use_gs', 'resume', 'deep', 'office_check_legacy'].forEach(k => { opts[k] = !!v[k]; });
+      ['use_disk', 'use_vss', 'use_office', 'use_lo', 'use_gs', 'resume', 'deep', 'office_check_legacy', 'allow_same_volume'].forEach(k => { opts[k] = !!v[k]; });
       if (!opts.kinds.length) throw new Error('Cochez au moins un type de fichier.');
       const r = await api('/api/reparedocs/runs', { method: 'POST', body: { share_id: Number(v.share_id), path: (v.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, ''), output: v.output || null, options: opts } });
       location.hash = `#/reparedocs/${r.run_id}`;
     } });
+  let timer = null, seq = 0;
+  const check = async () => {
+    const box = $('#rd-check', form);
+    if (!box) return;
+    const v = formData(form), mine = ++seq;
+    try {
+      const c = await api('/api/reparedocs/check', { method: 'POST', body: { share_id: Number(v.share_id), path: (v.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, ''), output: v.output || null } });
+      if (mine !== seq) return;
+      const out = $('[name=output]', form);
+      if (out) out.placeholder = c.output;
+      const warn = [];
+      if (!c.source_ok) warn.push(['critical', 'Dossier à analyser introuvable.']);
+      if (c.output_inside) warn.push(['critical', 'Le dossier de sortie est dans le dossier analysé : choisissez-en un autre.']);
+      if (c.same_volume) warn.push(['warning', 'La sortie est sur le même disque que les fichiers analysés : RepareDocs refusera, sauf si vous cochez « Autoriser la sortie sur le disque analysé » ou choisissez un dossier sur un autre disque.']);
+      if (c.copies) warn.push(['warning', `Ce dossier contient des copies faites par RepareDocs : analysez plutôt les originaux (${c.copies.originaux || ''}).`]);
+      if (c.previous) warn.push(['info', 'Un traitement précédent existe dans ce dossier de sortie : avec « Reprendre », les fichiers déjà traités et inchangés ne sont pas refaits.']);
+      if (c.disk_reason) warn.push(['info', `Récupération disque indisponible pour ce dossier : ${c.disk_reason}`]);
+      box.innerHTML = `<label>Contrôle RepareDocs</label><div class="small">Sortie : <span class="mono">${esc(c.output)}</span>${c.volume ? ` · disque analysé <span class="mono">${esc(c.volume)}</span>` : ''}</div>
+        ${warn.map(([tone, msg]) => `<div class="banner ${tone}" style="margin-top:8px">${icon(tone === 'info' ? 'info' : 'alert')}<span>${esc(msg)}</span></div>`).join('')}`;
+    } catch (e) {
+      if (mine === seq) box.innerHTML = `<div class="small muted">Contrôle impossible : ${esc(e.message)}</div>`;
+    }
+  };
+  ['share_id', 'path', 'output'].forEach(n => { const el = $(`[name=${n}]`, form); if (el) ['input', 'change'].forEach(ev => el.addEventListener(ev, () => { clearTimeout(timer); timer = setTimeout(check, 500); })); });
+  check();
 }
 
 /** Liste des traitements RepareDocs (page Réparation, onglet d'un dossier). */
@@ -88,7 +118,7 @@ function rdRunsTable(runs) {
       <td>${esc(RD_KIND[r.kind] || r.kind)}${r.options && r.options.analyse_only ? ' <span class="pill">analyse seule</span>' : ''}</td>
       <td class="path small">${esc(r.kind === 'individuel' ? (r.origin && (r.origin.rel || r.origin.name)) || '' : r.source || '')}</td>
       <td>${badge(RD_RUN_STATUS, r.status)}</td>
-      <td class="small">${r.status === 'running' ? (r.progress ? `${fmtNum(r.progress.done)} / ${fmtNum(r.progress.total)}` : '…') : `${fmtNum(g.repare)} réparé(s) · ${fmtNum(g.irrecup)} irrécupérable(s)`}</td>
+      <td class="small">${r.status === 'running' ? (r.progress ? `${fmtNum(r.progress.done)} / ${fmtNum(r.progress.total)}` : '…') : r.kind === 'restaurer' ? `${fmtNum((r.summary || {}).remis)} remis en place · ${fmtNum((r.summary || {}).ignores)} ignoré(s)` : `${fmtNum(g.repare)} réparé(s) · ${fmtNum(g.irrecup)} irrécupérable(s)`}</td>
       <td>${icon('chevron', 'file-icon')}</td></tr>`; }).join('')}</tbody></table></div>`;
 }
 
@@ -118,13 +148,13 @@ async function viewReparedocsRun(view, query, id) {
       ${phases.length ? `<ol class="stepper">${phases.map((ph, i) => { const cls = st.status !== 'running' && st.status !== 'failed' ? 'done' : i < cur ? 'done' : i === cur ? 'current' : ''; return `<li class="step ${cls}"><span class="dot">${cls === 'done' ? '✓' : i + 1}</span><span>${esc(ph)}</span></li>`; }).join('')}</ol>` : ''}
       <div class="card"><div class="strong">${esc(st.status === 'running' ? ((st.phase || {}).label || 'Démarrage…') : RD_RUN_STATUS[st.status][1])}</div>
         <div class="progress${st.status === 'running' && !p.total ? ' indeterminate' : ''}" style="margin:10px 0"><div style="width:${(100 * Math.min(1, frac)).toFixed(1)}%"></div></div>
-        <div class="small muted">${st.status === 'running' ? (p.total ? `${fmtNum(p.done)} / ${fmtNum(p.total)} fichier(s)${p.total_bytes ? ` · ${fmtBytes(p.bytes)} / ${fmtBytes(p.total_bytes)}` : ''}${p.eta ? ` · reste environ ${fmtDuration(p.eta)}` : ''}` : st.scan ? `${fmtNum(st.scan.found)} fichier(s) trouvé(s)…` : 'Préparation…') : `${fmtNum(total)} fichier(s) analysé(s)`}</div>
+        <div class="small muted">${st.status === 'running' ? (p.total ? `${fmtNum(p.done)} / ${fmtNum(p.total)} fichier(s)${p.total_bytes ? ` · ${fmtBytes(p.bytes)} / ${fmtBytes(p.total_bytes)}` : ''}${p.eta ? ` · reste environ ${fmtDuration(p.eta)}` : ''}` : st.scan ? `${fmtNum(st.scan.found)} fichier(s) trouvé(s)…` : 'Préparation…') : st.kind === 'restaurer' ? 'Remise en place des fichiers entièrement réparés' : `${fmtNum(total)} fichier(s) analysé(s)`}</div>
         ${st.status === 'running' && (p.current || []).length ? `<div class="cell-sub mono ellipsis" style="margin-top:6px">${esc(p.current.join('  •  '))}</div>` : ''}
         ${st.disk ? `<div class="cell-sub" style="margin-top:6px">Récupération disque : ${st.disk.enabled ? 'active' : 'non utilisée'} — ${esc(st.disk.reason || '')}</div>` : ''}</div>
-      <div class="tiles" style="margin-top:16px">${RD_GROUPS.slice(0, 5).map(x => `<div class="tile link${filter === x.key ? ' hero-tile' : ''}" data-rfilter="${x.key}"><div class="chip ${x.tone === 'ok' ? 'good' : x.tone}">${icon(x.key === 'repare' ? 'wrench' : x.key === 'sain' ? 'check' : x.key === 'irrecup' ? 'alert' : 'info')}</div><div class="body"><div class="label">${x.label}</div><div class="value">${fmtNum(g[x.key])}</div><div class="sub">${total ? Math.round(100 * g[x.key] / total) + ' %' : '—'}</div></div></div>`).join('')}</div>`;
+      ${st.kind === 'restaurer' ? `<div class="tiles" style="margin-top:16px">${[['remis', 'Remis en place', 'good', 'restore'], ['ignores', 'Ignorés (original modifié depuis)', 'warning', 'info'], ['erreurs', 'Erreurs', 'critical', 'alert']].map(([k, label, tone, ic]) => tile({ label, value: st.status === 'running' ? '…' : fmtNum((st.summary || {})[k]), ic, tone })).join('')}</div>` : `<div class="tiles" style="margin-top:16px">${RD_GROUPS.slice(0, 5).map(x => `<div class="tile link${filter === x.key ? ' hero-tile' : ''}" data-rfilter="${x.key}"><div class="chip ${x.tone === 'ok' ? 'good' : x.tone}">${icon(x.key === 'repare' ? 'wrench' : x.key === 'sain' ? 'check' : x.key === 'irrecup' ? 'alert' : 'info')}</div><div class="body"><div class="label">${x.label}</div><div class="value">${fmtNum(g[x.key])}</div><div class="sub">${total ? Math.round(100 * g[x.key] / total) + ' %' : '—'}</div></div></div>`).join('')}</div>`}`;
     $$('[data-rfilter]', view).forEach(t => { t.onclick = () => { filter = filter === t.dataset.rfilter ? null : t.dataset.rfilter; page = 0; render(); loadResults(); }; });
     const box = $('#rd-logs', view);
-    (st.logs || []).forEach(l => { if (l.id > lastLog) { lastLog = l.id; const d = document.createElement('div'); d.className = 'small ' + (l.level === 'error' ? 'err' : ''); d.textContent = l.line; box.appendChild(d); } });
+    (st.logs || []).forEach(l => { if (l.id > lastLog) { lastLog = l.id; const d = document.createElement('div'); d.className = 'small ' + ({ bad: 'err', error: 'err', warn: 'warn', ok: 'ok' }[l.level] || ''); d.textContent = l.line; box.appendChild(d); } });
     while (box.childElementCount > 1500) box.firstChild.remove();
     box.scrollTop = box.scrollHeight;
     if (st.kind === 'individuel') renderIndividual();

@@ -202,8 +202,10 @@ def test_tree_and_script(env):
     t = c.get(f"/api/restructure/{pid}/tree").json()
     assert any(n["path"] == "06 - Projets" and n["changed"] for n in t["after"])
     assert any(n["path"] == "Projets" for n in t["before"])
+    before = set(os.listdir(os.getcwd()))
     s = c.get(f"/api/restructure/{pid}/script")
     text = s.content.decode("utf-8-sig")
+    assert set(os.listdir(os.getcwd())) == before          # générer le script n'écrit rien
     assert "New-Item -ItemType Directory" in text and "robocopy" in text
     assert "/XC /XN /XO" in text and "/MOV" not in text and "/PURGE" not in text and "/MIR" not in text
     pwsh = shutil.which("pwsh")

@@ -163,13 +163,28 @@ def reparedocs_dir(path, cache):
     raise SystemExit("RepareDocs introuvable : app\\RepareDocs.py absent")
 
 
+def reparedocs_version(root):
+    try:
+        text = open(os.path.join(root, "app", "repare_docs", "engine.py"), encoding="utf-8").read()
+    except OSError:
+        return ""
+    m = re.search(r'^VERSION = "([^"]+)"', text, re.M)
+    return m.group(1) if m else ""
+
+
 def make_zip(kind, out_dir, runtime, winsw, py_version, reparedocs=None):
     ver = version()
     label = {"server": "WindowsServer", "pc": "PC-Windows"}[kind]
     top = f"VigieFS-{ver}-{label}"
     path = os.path.join(out_dir, f"{top}.zip")
-    readme = open(os.path.join(ROOT, "packaging", f"LISEZ-MOI-{'serveur' if kind == 'server' else 'PC'}.txt"),
+    flavour = "serveur" if kind == "server" else "PC"
+    readme = open(os.path.join(ROOT, "packaging", f"LISEZ-MOI-{flavour}.txt"),
                   encoding="utf-8").read().replace("{version}", ver).replace("{python}", py_version)
+    rd_text = ""
+    if reparedocs:
+        rd_text = open(os.path.join(ROOT, "packaging", f"reparedocs-{flavour}.txt"), encoding="utf-8").read()
+        rd_text = rd_text.replace("{rdver}", reparedocs_version(reparedocs)) + "\n"
+    readme = readme.replace("{reparedocs}\n", rd_text)
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         zf.writestr(f"{top}/LISEZ-MOI.txt", windows_text(readme).encode("utf-8"))
         for rel in project_files(kind):
