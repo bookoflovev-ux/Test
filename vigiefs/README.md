@@ -69,7 +69,7 @@ supervision, **droits d'accès et matrice AGDLP**, **architecture et chemins tro
 |---|---|
 | **Quotas stricts** | Quotas souples (alerte) ou **stricts** sur un dossier ou un sous-dossier, **quota automatique par sous-dossier** (dossiers personnels, projets), modèles. Application par **FSRM** (`New-FsrmQuota`, `New-FsrmAutoQuota`, seuils) quand il est présent, sinon **verrouillage VigieFS** : écriture refusée aux comptes non administrateurs dès le dépassement, rétablie automatiquement sous 98 %. Script FSRM généré. |
 | **Partages SMB** | Partages et droits de partage, **fichiers ouverts** et **sessions** (fermeture / déconnexion), énumération basée sur l'accès (ABE) ; équivalents Samba (`smbstatus`). |
-| **Santé du serveur** | SMB1, signature et chiffrement SMB, `LongPathsEnabled`, noms courts 8.3, volumes, clichés instantanés (VSS), audit d'accès aux fichiers, FSRM, services Datto, Defender / dossiers contrôlés, redémarrage en attente ; sous Linux : outils ACL, limites inotify, protocole et signature Samba, ABE, disques. |
+| **Santé du serveur** | Fin de support Microsoft de la version de Windows Server, SMB1, signature et chiffrement SMB, `LongPathsEnabled`, noms courts 8.3, volumes, clichés instantanés (VSS), audit d'accès aux fichiers, FSRM, services Datto, Defender / dossiers contrôlés, redémarrage en attente ; sous Linux : outils ACL, limites inotify, protocole et signature Samba, ABE, disques. |
 | **Données sensibles (RGPD)** | NIR avec clé de contrôle, IBAN (ISO 7064), cartes bancaires (Luhn), mots de passe en clair, données de santé, listes d'e-mails / téléphones dans les documents (y compris Word, Excel, PowerPoint, OpenDocument) ; valeurs masquées, **croisement avec les droits** pour repérer les données exposées à tous. |
 
 | Architecture d'un dossier | Quotas | Partages & fichiers ouverts |
@@ -122,7 +122,7 @@ installer et aucun accès Internet nécessaire sur la machine cible.
 
 | Paquet | Pour | Lanceurs |
 |---|---|---|
-| `VigieFS-<version>-WindowsServer.zip` | Windows Server 2016 → 2025 : service 24 h/24 (WinSW inclus) | `INSTALLER-VigieFS.bat`, `DESINSTALLER-VigieFS.bat` |
+| `VigieFS-<version>-WindowsServer.zip` | Windows Server 2019, 2022, 2025 (et 2016), avec ou sans bureau (Server Core) : service 24 h/24 (WinSW inclus) | `INSTALLER-VigieFS.bat`, `DESINSTALLER-VigieFS.bat` |
 | `VigieFS-<version>-PC-Windows.zip` | Windows 10 / 11 : essai ou usage sur un poste | `demo-vigiefs.bat`, `lancer-vigiefs.bat`, `arreter-vigiefs.bat` |
 
 Chaque archive contient un `LISEZ-MOI.txt` pas à pas. Avant d'extraire : clic droit sur le ZIP ›

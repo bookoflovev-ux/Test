@@ -346,3 +346,15 @@ def test_start_raises_no_false_repair(eng):
     engine.guard.check()
     assert db.query_one("SELECT COUNT(*) AS n FROM alerts WHERE fingerprint LIKE 'service:repair:%'")["n"] == 0
     assert {c["name"]: c for c in engine.guard.snapshot()["components"]}["scheduler"]["repairs"] == 0
+
+
+def test_windows_server_lifecycle():
+    from vigiefs.health import lifecycle_check
+    oct_2026 = time.mktime((2026, 10, 19, 12, 0, 0, 0, 0, -1))
+    assert lifecycle_check("Microsoft Windows Server 2025 Standard", "10.0.26100", oct_2026)["status"] == "ok"
+    assert lifecycle_check("Microsoft Windows Server 2022 Datacenter", "10.0.20348", oct_2026)["status"] == "info"
+    assert lifecycle_check("Microsoft Windows Server 2019 Standard", "10.0.17763", oct_2026)["status"] == "info"
+    assert lifecycle_check("Microsoft Windows Server 2016 Standard", "10.0.14393", oct_2026)["status"] == "warning"
+    assert lifecycle_check("Microsoft Windows Server 2019 Standard", "10.0.17763",
+                           time.mktime((2029, 2, 1, 12, 0, 0, 0, 0, -1)))["status"] == "critical"
+    assert lifecycle_check("Microsoft Windows 11 Pro", "10.0.26100", oct_2026) is None

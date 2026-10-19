@@ -127,6 +127,15 @@ if ($Uninstall) {
     return
 }
 
+# ------------------------------------------------------------------ système
+# Windows Server 2019 (build 17763), 2022 (20348), 2025 (26100) ; avec ou sans bureau (Server Core).
+$os = Get-CimInstance Win32_OperatingSystem
+$core = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue).InstallationType -eq 'Server Core'
+Write-Host ("Système : {0} (build {1}){2}" -f $os.Caption, $os.BuildNumber, $(if ($core) { ' — Server Core' } else { '' })) -ForegroundColor Cyan
+if ([int]$os.BuildNumber -lt 14393) {
+    Write-Warning 'Version de Windows non prise en charge : Windows Server 2016 ou plus récent requis.'
+}
+
 # ------------------------------------------------------------------ questions (double-clic)
 if ($Interactive) {
     Write-Host ''
@@ -134,7 +143,11 @@ if ($Interactive) {
     $InstallDir = Ask 'Dossier du programme' $InstallDir
     $DataDir = Ask 'Dossier des données (base, journaux, sauvegardes)' $DataDir
     $Port = [int](Ask "Port de l'interface web" "$Port")
-    $ListenAll = (Ask "Ouvrir l'interface aux autres postes du réseau ? (O/N)" $(if ($ListenAll) { 'O' } else { 'N' })) -match '^[oOyY]'
+    if ($core) {
+        Write-Host "Server Core : pas de navigateur sur ce serveur, l'interface s'ouvre depuis un poste du réseau." -ForegroundColor Yellow
+    }
+    $defaultNet = if ($ListenAll -or $core) { 'O' } else { 'N' }
+    $ListenAll = (Ask "Ouvrir l'interface aux autres postes du réseau ? (O/N)" $defaultNet) -match '^[oOyY]'
     $acct = Ask 'Compte de service (vide = SYSTEM ; ex. DOMAINE\svc-vigiefs)' $ServiceAccount
     if ($acct) {
         $ServiceAccount = $acct
@@ -280,8 +293,14 @@ if ($ListenAll) {
     }
 }
 
-# Raccourci vers l'interface sur le bureau de tous les utilisateurs.
-"[InternetShortcut]`r`nURL=http://localhost:$Port/`r`n" | Set-Content -Path "$env:PUBLIC\Desktop\VigieFS.url" -Encoding ASCII
+# Raccourci vers l'interface sur le bureau de tous les utilisateurs (sauf Server Core, sans bureau).
+if (-not $core -and (Test-Path "$env:PUBLIC\Desktop")) {
+    try {
+        "[InternetShortcut]`r`nURL=http://localhost:$Port/`r`n" |
+            Set-Content -Path "$env:PUBLIC\Desktop\VigieFS.url" -Encoding ASCII
+    } catch { Write-Warning "Raccourci non créé : $($_.Exception.Message)" }
+}
+$remoteUrl = "http://$($env:COMPUTERNAME.ToLower()):$Port/"
 
 Write-Host '==> Vérification du démarrage' -ForegroundColor Cyan
 $ok = $false
@@ -292,7 +311,10 @@ for ($i = 0; $i -lt 60 -and -not $ok; $i++) {
 Write-Host ''
 if ($ok) {
     Write-Host "VigieFS est installé et en service ($Mode). Interface : http://localhost:$Port/" -ForegroundColor Green
-    if ($Interactive) { Start-Process "http://localhost:$Port/" }
+    if ($ListenAll) { Write-Host "Depuis un poste du réseau : $remoteUrl" -ForegroundColor Green }
+    if ($Interactive -and -not $core) {
+        try { Start-Process "http://localhost:$Port/" } catch { Write-Host "Ouvrez http://localhost:$Port/ dans un navigateur." }
+    }
 } else {
     Write-Warning "VigieFS ne répond pas encore : consultez $DataDir\run\console.log et « python -m vigiefs status »."
 }

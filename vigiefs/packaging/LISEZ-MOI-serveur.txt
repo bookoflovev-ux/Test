@@ -5,7 +5,9 @@ Contenu : VigieFS, Python {python} embarqué et WinSW (service Windows).
 Aucun accès Internet ni installation de Python ne sont nécessaires.
 
 PRÉREQUIS
-- Windows Server 2016, 2019, 2022 ou 2025 (64 bits) ; .NET Framework 4.6.1 ou plus (présent d'office).
+- Windows Server 2019, 2022 ou 2025 (64 bits), avec ou sans bureau (Server Core) ;
+  Windows Server 2016 fonctionne aussi. Le même paquet sert pour toutes ces versions.
+- .NET Framework 4.6.1 ou plus : présent d'office (4.7.2 sur 2019, 4.8 sur 2022, 4.8.1 sur 2025).
 - Un compte administrateur pour l'installation.
 
 INSTALLATION (environ 5 minutes)
@@ -22,6 +24,21 @@ INSTALLATION (environ 5 minutes)
                                      partages distants et la création de groupes AD
 4. Le navigateur s'ouvre : créez le compte administrateur VigieFS.
    Un raccourci « VigieFS » est ajouté sur le bureau.
+
+SERVER CORE (sans bureau)
+- Depuis l'invite de commandes administrateur :
+    powershell -Command "Unblock-File C:\Temp\VigieFS-{version}-WindowsServer.zip; Expand-Archive C:\Temp\VigieFS-{version}-WindowsServer.zip C:\Temp"
+    C:\Temp\VigieFS-{version}-WindowsServer\INSTALLER-VigieFS.bat
+- Répondez O à « accès depuis le réseau » : l'interface s'ouvre depuis un poste, à l'adresse
+  http://NOM-DU-SERVEUR:8470/ affichée en fin d'installation.
+
+RÔLES WINDOWS UTILES (facultatifs, PowerShell administrateur)
+- Quotas stricts natifs FSRM (sinon verrouillage VigieFS) :
+    Install-WindowsFeature FS-Resource-Manager -IncludeManagementTools
+- Création des groupes AD proposés par la matrice de droits (inutile sur un contrôleur de domaine) :
+    Install-WindowsFeature RSAT-AD-PowerShell
+- Le contrôle « Santé du serveur » de VigieFS liste les réglages à corriger (SMB1, signature SMB,
+  clichés instantanés, audit des accès…) et la date de fin de support Microsoft de la version.
 
 FONCTIONNEMENT 24 H/24
 - Service Windows « VigieFS » : démarrage automatique (différé) au démarrage du serveur,

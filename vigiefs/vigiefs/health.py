@@ -45,6 +45,40 @@ def _list(v):
     return [] if v is None else v if isinstance(v, list) else [v]
 
 
+# Cycle de vie Microsoft (LTSC) : build → (nom, fin du support standard, fin du support étendu).
+SERVER_LIFECYCLE = {
+    14393: ("Windows Server 2016", "2022-01-11", "2027-01-12"),
+    17763: ("Windows Server 2019", "2024-01-09", "2029-01-09"),
+    20348: ("Windows Server 2022", "2026-10-13", "2031-10-14"),
+    26100: ("Windows Server 2025", "2029-11-13", "2034-11-14"),
+}
+
+
+def lifecycle_check(caption, version, now=None):
+    """Support Microsoft de la version de Windows Server (None pour un poste ou une version inconnue)."""
+    if "server" not in (caption or "").lower():
+        return None
+    m = re.search(r"\.(\d{5})", version or "")
+    entry = SERVER_LIFECYCLE.get(int(m.group(1))) if m else None
+    if not entry:
+        return None
+    name, mainstream, extended = entry
+    today = time.strftime("%Y-%m-%d", time.localtime(now))
+    fr = lambda d: "/".join(reversed(d.split("-")))  # noqa: E731
+    months_left = (int(extended[:4]) - int(today[:4])) * 12 + int(extended[5:7]) - int(today[5:7])
+    if today >= extended:
+        status, value = "critical", f"plus de correctifs de sécurité depuis le {fr(extended)}"
+    elif months_left <= 18:
+        status, value = "warning", f"fin des correctifs de sécurité le {fr(extended)}"
+    elif today >= mainstream:
+        status, value = "info", f"support étendu (sécurité uniquement) jusqu'au {fr(extended)}"
+    else:
+        status, value = "ok", f"support standard jusqu'au {fr(mainstream)}, étendu jusqu'au {fr(extended)}"
+    return check("lifecycle", "Système", f"Support Microsoft — {name}", status, value,
+                 "Planifiez la migration vers une version supportée avant la fin des correctifs de sécurité.",
+                 "")
+
+
 def check(c_id, group, label, status, value="", recommendation="", fix=""):
     return {"id": c_id, "group": group, "label": label, "status": status, "value": value,
             "recommendation": recommendation, "fix": fix}
@@ -121,6 +155,9 @@ def windows_checks():
                      "oui" if d.get("reboot") else "non", "Planifiez le redémarrage pour finaliser les mises à jour."))
     os_ = d.get("os") or {}
     out.append(check("os", "Système", "Système d'exploitation", "info", f"{os_.get('Caption', '')} {os_.get('Version', '')}"))
+    life = lifecycle_check(os_.get("Caption"), os_.get("Version"))
+    if life:
+        out.append(life)
     return out
 
 
