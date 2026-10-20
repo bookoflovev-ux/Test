@@ -32,7 +32,7 @@ def _is_junction(entry):
 
 
 def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_notes=None,
-              progress=None, cancel=None, junk=None, skip_roots=(), paths=None):
+              progress=None, cancel=None, junk=None, skip_roots=(), paths=None, owners=None):
     """Parcourt `root` (sans suivre les liens) et renvoie un rapport agrégé (dict)."""
     screening = screening or Matcher()
     ransom_ext = ransom_ext or Matcher()
@@ -127,6 +127,9 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
                 elif size > largest[0][0]:
                     heapq.heapreplace(largest, item)
 
+                if owners is not None:
+                    owners.file(rel, entry.path, st, size, mtime, bool(stale_limit and mtime < stale_limit))
+
                 if stale_limit and mtime < stale_limit:
                     stale_count += 1
                     stale_size += size
@@ -200,6 +203,7 @@ def scan_tree(root, stale_days=365, screening=None, ransom_ext=None, ransom_note
         "empty_dirs": empty_dirs,
         "paths": paths.report() if paths is not None else None,
         "_folder_stats": paths.folder_stats() if paths is not None else None,
+        "_owners": owners.report() if owners is not None else None,
     }
 
 

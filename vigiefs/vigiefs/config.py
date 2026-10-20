@@ -138,6 +138,44 @@ DEFAULT_SETTINGS = {
         "db_backup_hour": 2,
         "db_backups_keep": 7,
     },
+    "security": {
+        "enabled": True,
+        "poll_sec": 60,
+        "collect_windows": True,          # journal Sécurité (audit des fichiers, connexions)
+        "collect_samba": True,            # module Samba full_audit
+        "samba_log": "",                  # vide : /var/log/samba/audit.log, sinon syslog
+        "smb_sampling": True,             # sessions et fichiers ouverts (sans audit)
+        "include_reads": True,
+        "initial_days": 7,                # historique repris au premier démarrage
+        "max_events_per_poll": 20000,
+        "raw_retention_days": 45,
+        "max_raw_events": 5000000,        # plafond du détail conservé (les plus anciens partent d'abord)
+        "aggregate_retention_days": 400,
+        "excluded_accounts": ["*$", "system", "système", "local service", "service local", "network service",
+                              "service réseau", "anonymous logon", "ouverture de session anonyme", "dwm-*",
+                              "umfd-*", "font driver host\\*", "window manager\\*", "svc_*", "svc-*",
+                              "*backup*", "datto*", "veeam*", "-"],
+        "business_hours": {"start": 7, "end": 20, "days": [0, 1, 2, 3, 4]},
+        "baseline_days": 28,
+        "thresholds": {
+            "mass_delete": 100,           # suppressions en 10 min
+            "ransomware": 150,            # modifications + renommages en 10 min
+            "mass_read": 1000,            # fichiers distincts lus en 1 h
+            "anomaly_factor": 4,          # × activité horaire habituelle (95e centile)
+            "anomaly_min": 300,           # événements / h en dessous desquels on ne signale rien
+            "offhours_min": 50,           # événements / h hors horaires
+            "denied": 25,                 # accès refusés en 1 h
+            "logon_fail": 10,             # échecs de connexion d'un compte en 15 min
+            "spray_users": 5,             # comptes différents en échec depuis un même poste en 15 min
+            "perm_changes": 10,           # modifications de droits en 1 h
+            "dormant_days": 45,
+            "storage_growth_gb": 5,       # croissance du volume d'un utilisateur entre deux analyses
+        },
+        "default_capacity_gb": 0,         # capacité allouée par utilisateur (0 : aucune)
+        "capacity_warn_pct": 90,
+        "risk_half_life_days": 7,
+        "auto_response": {"ransomware": False, "close_sessions": True, "block_share": False},
+    },
     "sensitive": {
         "max_file_mb": 20,
         "extensions": [".txt", ".csv", ".log", ".xml", ".json", ".html", ".htm", ".md", ".docx", ".xlsx", ".pptx",

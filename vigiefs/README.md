@@ -40,6 +40,23 @@ supervision, **droits d'accès et matrice AGDLP**, **architecture et chemins tro
 | **Journal d'activité** | Créations, modifications, suppressions, renommages en temps réel, export CSV. |
 | **Alertes** | Dédoublonnées, escalade, acquittement, résolution automatique ; e-mail (SMTP) et webhook signé HMAC. |
 
+### Sécurité et utilisateurs (journaux, comportements, capacité)
+| Domaine | Ce que fait VigieFS |
+|---|---|
+| **Collecte** | Lecture **continue** du journal Sécurité Windows avec un signet (rien de perdu ni de lu deux fois, même après un redémarrage) : accès aux fichiers (4663, refus 4656 / 5145 avec l'adresse du poste), connexions aux partages (5140), ouvertures de session réussies et échouées (4624 / 4625 avec le motif), verrouillages (4740), droits modifiés (4670), audit modifié (4719, 4907), **journal effacé** (1102), comptes créés / supprimés et **ajouts à un groupe** (4720, 4726, 4728, 4732, 4756). Sous Linux / NAS : module Samba **full_audit**. Sans audit : échantillonnage des **sessions et fichiers ouverts SMB**. Comptes de service, machines et sauvegardes exclus (liste réglable), opérations répétées dédoublonnées, chaque événement rattaché à son dossier supervisé et au poste d'origine. |
+| **Analyse des journaux** | Recherche par utilisateur, dossier, action, résultat, poste, chemin et période ; répartition dans le temps, par action, utilisateur, dossier et poste ; **export CSV**. **Import** d'un journal existant (`.evtx` sur Windows, export XML de l'Observateur d'événements, journal Samba) : il est analysé avec les mêmes détecteurs sur toute sa période. |
+| **Comportements anormaux** | Ligne de base de chaque utilisateur (28 jours : volume horaire habituel, part d'activité hors horaires, postes et dossiers habituels) et détecteurs : **chiffrement en cours attribué à un utilisateur et à un poste** (renommages massifs, extensions de rançongiciel), **suppressions massives**, **lectures massives / copie de données** (aggravée la nuit, depuis un poste nouveau ou dans des dossiers de données personnelles), volume inhabituel, activité hors horaires, **accès refusés répétés**, nouveau poste, dossier jamais consulté, modifications de droits en série, **force brute** et **pulvérisation de mots de passe**, compte verrouillé, **compte dormant réactivé**, **journal effacé** ou audit désactivé, **ajout à un groupe d'administration**, croissance brutale du volume stocké. Un épisode = un constat (pas de doublons) ; alerte e-mail / webhook pour les constats récents. |
+| **Score de risque** | Score de 0 à 100 par utilisateur (cumul des constats, demi-vie réglable) : *faible, modéré, élevé, critique*. Utilisateur **surveillé** (départ, prestataire, compte sensible) : seuils divisés par deux, constats plus graves. |
+| **Fiche utilisateur** | Score, espace occupé et capacité, activité sur 7 jours, **carte des habitudes** (jour × heure sur 28 jours, horaires de travail encadrés), anomalies avec exemples, dossiers et fichiers les plus utilisés, postes et adresses, sessions et fichiers ouverts en ce moment, évolution de l'espace occupé, dernières opérations. |
+| **Ce que chaque utilisateur occupe** | À chaque analyse, chaque fichier est attribué à son **propriétaire** (NTFS ou POSIX) ou, sous une racine de dossiers personnels (« Utilisateurs/alice »), à l'utilisateur du dossier — utile quand les propriétaires ont été perdus lors d'une migration. Volume, fichiers, données inactives, sous-dossiers et types par utilisateur, historique quotidien. Quotas NTFS par utilisateur affichés s'ils existent. |
+| **Capacité allouée** | Capacité par défaut et par utilisateur (tous dossiers confondus) : alerte à 90 % puis au dépassement. |
+| **Réagir** | Depuis la fiche : **fermer ses sessions** SMB, **bloquer son accès** au partage (refus SMB, droits NTFS inchangés, réversible), **désactiver son compte** (AD ou local, confirmation). **Réponse automatique** en option sur un chiffrement attribué : sessions fermées, accès au partage bloqué. Tout est journalisé. |
+| **Préparer l'audit** | Contrôle des réglages du serveur : sous-catégories d'audit avancé (`auditpol`), taille du journal Sécurité (≥ 1 Go), audit posé sur chaque dossier supervisé (SACL « Tout le monde » : écriture, suppression, droits, propriétaire, lecture en option). **Application en un clic** ou **script PowerShell** (à reporter dans la GPO si l'audit est géré par le domaine). Sous Samba : état de full_audit par partage et extrait de `smb.conf`. |
+
+| Sécurité & comportements | Fiche d'un utilisateur |
+|---|---|
+| ![](docs/securite.png) | ![](docs/utilisateur.png) |
+
 ### Droits d'accès et matrice
 | Domaine | Ce que fait VigieFS |
 |---|---|
@@ -193,8 +210,12 @@ Le premier lancement crée un **jeu fictif** dans `data-demo/` et ouvre le navig
 Le jeu fictif (≈ 8 Mo, deux clients) contient de quoi essayer chaque fonction : doublons,
 fichiers inutiles, documents anciens à archiver, documents abîmés à réparer, un chemin de plus
 de 260 caractères vu du réseau, des noms non conformes, un fichier interdit, des données
-personnelles fictives (NIR, IBAN, carte, mot de passe, santé) et un quota dépassé. Les analyses
-démarrent seules ; lancez ensuite *Analyser les droits*, *Proposition AGDLP*, *Doublons*,
+personnelles fictives (NIR, IBAN, carte, mot de passe, santé) et un quota dépassé. Il contient
+aussi **quatre semaines d'activité de huit utilisateurs** et des incidents à repérer dans
+*Sécurité & comportements* : copie massive de nuit depuis un poste inconnu par un salarié sur le
+départ, suppressions en masse, stagiaire qui force des accès refusés, attaque de mots de passe,
+compte dormant réactivé, chiffrement en cours sur le second client, journal de sécurité effacé.
+Les analyses démarrent seules ; lancez ensuite *Analyser les droits*, *Proposition AGDLP*, *Doublons*,
 *Contrôle d'intégrité* ou *Données sensibles* depuis chaque dossier.
 
 `Ctrl+C` dans la fenêtre arrête VigieFS ; supprimer le dossier `data-demo` efface tout. Aucun
@@ -321,6 +342,12 @@ vigiefs/
 │   ├── reparedocs.py   Connecteur du moteur RepareDocs (protocole --web, exécutions, résultats)
 │   ├── restructure.py  Réorganisation : proposition, emplacements finaux, robocopy vérifié, retour arrière
 │   ├── api_reparedocs.py, api_restructure.py   API correspondantes
+│   ├── activity.py     Activité par utilisateur : journal Sécurité Windows, audit Samba, sessions SMB, import
+│   ├── ueba.py         Lignes de base, détecteurs de comportements anormaux, score de risque
+│   ├── userstorage.py  Occupation par utilisateur (propriétaire NTFS/POSIX, dossiers personnels), capacité
+│   ├── response.py     Réponses : fermer les sessions, bloquer l'accès, désactiver le compte
+│   ├── auditsetup.py   Préparation de l'audit (auditpol, journal, SACL ; Samba full_audit)
+│   ├── api_security.py API sécurité et utilisateurs
 │   ├── api.py          API REST FastAPI + service de l'interface
 │   ├── api_rights.py   API droits, matrice, architecture, quotas, SMB, santé, RGPD
 │   ├── api_service.py  API service : sondes, état, disponibilité, arrêt, maintenance
@@ -394,7 +421,16 @@ ressource n'est chargée depuis Internet.
   relance VigieFS au démarrage ; une coupure brutale est journalisée comme « interruption ».
 - La surveillance temps réel d'un partage UNC distant dépend du serveur distant
   (notifications SMB) ; les analyses planifiées restent la source de vérité.
-- Le propriétaire NTFS n'est pas affiché (seules les ACL via `icacls`).
+- L'analyse de l'activité par utilisateur dépend de l'**audit du serveur** (journal Sécurité Windows ou
+  Samba full_audit) : sans lui, VigieFS ne voit que les sessions et fichiers ouverts SMB échantillonnés
+  chaque minute (les ouvertures brèves échappent à l'échantillonnage). L'audit des lectures est
+  volumineux : prévoyez un journal Sécurité d'au moins 1 Go. Les lectures, détections, l'import XML,
+  l'audit Samba et l'attribution des propriétaires sont testés de bout en bout ; la lecture du journal
+  Sécurité (PowerShell `Get-WinEvent`), `auditpol`, les SACL, `Block-SmbShareAccess` et la
+  désactivation AD sont écrits d'après la documentation Microsoft : **validez-les sur un serveur de
+  recette**. Les seuils de détection sont des valeurs de départ à ajuster à chaque client.
+- Le propriétaire NTFS sert à l'occupation par utilisateur, mais n'est pas modifiable depuis l'explorateur
+  de VigieFS (seulement via les opérations de droits).
 - La réparation de documents traite la corruption de **structure** (archive, XML, PDF). Un
   document dont le contenu a été écrasé (zéros, chiffrement) est irrécupérable : restaurez-le
   depuis Datto. Les documents protégés par mot de passe ne sont pas déchiffrés.

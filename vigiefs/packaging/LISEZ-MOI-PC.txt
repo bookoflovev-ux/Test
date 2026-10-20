@@ -11,7 +11,10 @@ DÉMARRAGE
 
    demo-vigiefs.bat    ESSAI avec des données fictives (dossier data-demo) : deux clients,
                        doublons, fichiers inutiles, documents anciens, documents abîmés, chemin
-                       trop long, données personnelles fictives, quota dépassé.
+                       trop long, données personnelles fictives, quota dépassé, et quatre
+                       semaines d'activité de huit utilisateurs avec des incidents à repérer
+                       (menu Sécurité : copie massive de nuit, suppressions en masse,
+                       attaque de mots de passe, chiffrement en cours…).
                        Aucun autre fichier de l'ordinateur n'est lu ni modifié.
 
    lancer-vigiefs.bat  UTILISATION sur vos propres dossiers (dossier data, vide au départ) :

@@ -86,13 +86,16 @@ class ShareIn(BaseModel):
     acl_depth: int = Field(4, ge=0, le=8)
     acl_interval_h: int = Field(24, ge=0)
     matrix_depth: int = Field(2, ge=0, le=6)
+    owner_scan: bool = True
+    home_roots: str = Field("", max_length=1000)
 
 
 SHARE_FIELDS = ["client_id", "name", "path", "description", "quota_bytes", "quota_warn_pct", "quota_crit_pct",
                 "screening_enabled", "screening_action", "blocked_extensions", "monitor_enabled",
                 "scan_interval_min", "stale_days", "disk_free_warn_pct", "archive_enabled", "archive_age_days",
                 "archive_min_size_kb", "archive_extensions", "archive_exclude", "archive_criterion",
-                "archive_stub", "archive_interval_days", "access_path", "acl_depth", "acl_interval_h", "matrix_depth"]
+                "archive_stub", "archive_interval_days", "access_path", "acl_depth", "acl_interval_h", "matrix_depth",
+                "owner_scan", "home_roots"]
 
 
 class CleanupIn(BaseModel):
@@ -1337,6 +1340,8 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
               "has_role": has_role}
     register_reparedocs(app, common)
     register_restructure(app, common)
+    from .api_security import register as register_security
+    register_security(app, common)
 
     # ------------------------------------------------------------ interface web
     @app.exception_handler(OSError)

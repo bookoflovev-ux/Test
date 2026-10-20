@@ -21,6 +21,8 @@ from .storage import ArchiveService, RecycleBin, share_policy
 from .rules import (days_until_full, growth_per_day, quota_state, ransomware_matchers,
                     share_screening_matcher)
 from .scanner import ScanCancelled, quarantine_file, scan_tree
+from .activity import SecurityService
+from .userstorage import OwnerCollector, after_scan
 
 log = logging.getLogger("vigiefs.engine")
 
@@ -62,6 +64,7 @@ class Engine:
         # (UNC, NAS) ne peut pas bloquer le planificateur.
         self.probes = ThreadPoolExecutor(max_workers=4, thread_name_prefix="vigiefs-sonde")
         self._pending_probes = {}
+        self.security = SecurityService(self)
         self.guard = Guard(self, self.data_dir)
 
     # --- cycle de vie ---
@@ -71,12 +74,14 @@ class Engine:
         # Planificateur avant la garde : sinon elle le jugerait arrêté et lèverait une fausse alerte.
         self.monitor.start()
         self.restart_scheduler()
+        self.security.start()
         self.guard.start()
 
     def stop(self):
         self.stopping = True
         self._stop.set()
         self.guard.stop()
+        self.security.stop()
         for job in list(self.running.values()):
             job["cancel"].set()
         self.monitor.stop()
@@ -261,7 +266,8 @@ class Engine:
                 ransom_ext=rs_ext, ransom_notes=rs_notes,
                 progress=job["progress"], cancel=job["cancel"],
                 junk=JunkClassifier.from_settings(self.db), skip_roots=self.skip_roots(),
-                paths=PathAnalyzer(share.get("access_path") or share["path"], merged_setting(self.db, "paths")))
+                paths=PathAnalyzer(share.get("access_path") or share["path"], merged_setting(self.db, "paths")),
+                owners=OwnerCollector(share) if share.get("owner_scan", 1) else None)
         except ScanCancelled:
             self.db.execute("UPDATE scans SET status='cancelled', finished_at=? WHERE id=?", (time.time(), scan_id))
             self.db.execute("UPDATE shares SET last_scan_status='annulée' WHERE id=?", (share["id"],))
@@ -277,6 +283,7 @@ class Engine:
 
         finished = time.time()
         self.store_folder_stats(share["id"], report)
+        self._safe(after_scan, self, share, report)
         self.db.execute(
             "UPDATE scans SET status='done', finished_at=?, total_size=?, file_count=?, dir_count=?, "
             "error_count=?, stale_count=?, stale_size=?, report=? WHERE id=?",

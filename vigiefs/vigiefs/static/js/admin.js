@@ -1,7 +1,7 @@
 /* VigieFS — administration : paramètres, utilisateurs, clés d'API, audit, tâches */
 'use strict';
 
-const SETTINGS_TABS = [['account', 'Mon compte', 'viewer'], ['general', 'Général', 'admin'], ['notifications', 'Notifications', 'admin'], ['security', 'Sécurité & filtrage', 'admin'], ['storage', 'Stockage & réparation', 'admin'], ['compliance', 'Droits, chemins & quotas', 'admin'], ['retention', 'Prévisions & rétention', 'admin'], ['users', 'Utilisateurs', 'admin'], ['apikeys', "Clés d'API", 'admin'], ['audit', "Journal d'audit", 'admin'], ['integration', 'Intégration & système', 'viewer']];
+const SETTINGS_TABS = [['account', 'Mon compte', 'viewer'], ['general', 'Général', 'admin'], ['notifications', 'Notifications', 'admin'], ['security', 'Sécurité & filtrage', 'admin'], ['behavior', 'Comportements & journaux', 'admin'], ['storage', 'Stockage & réparation', 'admin'], ['compliance', 'Droits, chemins & quotas', 'admin'], ['retention', 'Prévisions & rétention', 'admin'], ['users', 'Utilisateurs', 'admin'], ['apikeys', "Clés d'API", 'admin'], ['audit', "Journal d'audit", 'admin'], ['integration', 'Intégration & système', 'viewer']];
 const listToText = l => (Array.isArray(l) ? l.join(', ') : l || '');
 const textToList = t => t.split(/[,;\n]/).map(x => x.trim()).filter(Boolean);
 
@@ -63,6 +63,56 @@ async function viewSettings(view, query, tab) {
       ${field('Dossier de quarantaine', inp('quarantine_dir', sc.quarantine_dir, 'text', 'placeholder="E:\\VigieFS\\Quarantaine"'), 'Doit être <b>en dehors</b> des dossiers supervisés. Vide = quarantaine désactivée.', true)}</div>`, 'f-sc');
     onSubmit('f-rs', d => save('ransomware', { ...d, extensions: textToList(d.extensions), note_patterns: textToList(d.note_patterns) }));
     onSubmit('f-sc', d => save('screening', { ...d, default_blocked_extensions: textToList(d.default_blocked_extensions) }));
+  }
+  if (tab === 'behavior') {
+    const b = st.security; const t = b.thresholds || {}; const bh = b.business_hours || {}; const ar = b.auto_response || {};
+    const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+    const num = (n, label, hint = '', min = 0) => field(label, inp('t_' + n, t[n], 'number', `min="${min}" step="any"`), hint);
+    pane.innerHTML = formCard('Collecte de l\'activité', `${chk('enabled', 'Collecter et analyser l\'activité des utilisateurs', b.enabled)}<div class="form-grid">
+      <div class="field">${chk('collect_windows', 'Journal Sécurité Windows (audit des fichiers, connexions)', b.collect_windows)}</div>
+      <div class="field">${chk('collect_samba', 'Journal d\'audit Samba (Linux, NAS)', b.collect_samba)}</div>
+      <div class="field">${chk('smb_sampling', 'Sessions et fichiers ouverts SMB (sans audit)', b.smb_sampling)}</div>
+      <div class="field">${chk('include_reads', 'Tenir compte des lectures (détection des copies massives)', b.include_reads)}</div>
+      ${field('Fréquence de collecte (s)', inp('poll_sec', b.poll_sec, 'number', 'min="15"'))}
+      ${field('Journal Samba', inp('samba_log', b.samba_log, 'text', 'placeholder="/var/log/samba/audit.log (détection automatique)"'))}
+      ${field('Historique repris au premier démarrage (jours)', inp('initial_days', b.initial_days, 'number', 'min="0" max="90"'))}
+      ${field('Détail des événements conservé (jours)', inp('raw_retention_days', b.raw_retention_days, 'number', 'min="1"'), 'Les totaux horaires (lignes de base) sont gardés plus longtemps.')}
+      ${field('Totaux horaires conservés (jours)', inp('aggregate_retention_days', b.aggregate_retention_days, 'number', 'min="30"'))}
+      ${field('Événements détaillés conservés au plus', inp('max_raw_events', b.max_raw_events, 'number', 'min="100000" step="100000"'), 'Au-delà, les plus anciens sont effacés en premier (la base reste raisonnable sur un serveur très chargé).')}
+      ${field('Comptes exclus', `<textarea name="excluded_accounts">${esc(listToText(b.excluded_accounts))}</textarea>`, 'Comptes de service, sauvegarde, machines (*$)… Joker * accepté, sur « DOMAINE\\compte » ou « compte ».', true)}</div>`, 'f-bc') +
+      formCard('Habitudes et seuils de détection', `<div class="form-grid cols-3">
+      ${field('Début des horaires de travail', inp('bh_start', bh.start, 'number', 'min="0" max="23"'))}
+      ${field('Fin des horaires de travail', inp('bh_end', bh.end, 'number', 'min="1" max="24"'))}
+      <div class="field"><label>Jours travaillés</label><div class="btn-row">${DAYS.map((d, i) => chk('bh_d' + i, d, (bh.days || []).includes(i))).join('')}</div></div>
+      ${field('Ligne de base (jours)', inp('baseline_days', b.baseline_days, 'number', 'min="7" max="120"'), 'Période de référence des habitudes de chaque utilisateur.')}
+      ${num('mass_delete', 'Suppressions massives', 'en 10 minutes', 5)}
+      ${num('ransomware', 'Modifications + renommages (rançongiciel)', 'en 10 minutes', 10)}
+      ${num('mass_read', 'Lectures massives', 'fichiers distincts en 1 heure', 50)}
+      ${num('anomaly_factor', 'Facteur d\'anomalie', '× l\'heure la plus chargée habituelle', 1)}
+      ${num('anomaly_min', 'Volume minimal signalé', 'opérations / heure', 10)}
+      ${num('offhours_min', 'Activité hors horaires', 'opérations / heure', 1)}
+      ${num('denied', 'Accès refusés', 'en 1 heure', 1)}
+      ${num('logon_fail', 'Échecs de connexion d\'un compte', 'en 15 minutes', 1)}
+      ${num('spray_users', 'Comptes en échec depuis un même poste', 'en 15 minutes', 2)}
+      ${num('perm_changes', 'Modifications de droits', 'en 1 heure', 1)}
+      ${num('dormant_days', 'Compte dormant après (jours)', '', 7)}
+      ${num('storage_growth_gb', 'Croissance du volume d\'un utilisateur (Go)', 'entre deux analyses', 0)}
+      ${field('Demi-vie du score de risque (jours)', inp('risk_half_life_days', b.risk_half_life_days, 'number', 'min="1"'))}</div>`, 'f-bt', '', 'Un utilisateur « surveillé » déclenche dès la moitié de ces seuils.') +
+      formCard('Capacité par utilisateur', `<div class="form-grid">
+      ${field('Capacité allouée par défaut (Go)', inp('default_capacity_gb', b.default_capacity_gb, 'number', 'min="0" step="any"'), '0 = aucune. Personnalisable sur la fiche de chaque utilisateur.')}
+      ${field('Avertir à partir de (%)', inp('capacity_warn_pct', b.capacity_warn_pct, 'number', 'min="50" max="100"'))}</div>`, 'f-bcap') +
+      formCard('Réponse automatique', `${chk('ar_ransomware', 'En cas de chiffrement attribué à un utilisateur (critique) : réagir sans attendre un technicien', ar.ransomware)}
+      <div class="form-grid" style="margin-top:8px"><div class="field">${chk('ar_close', 'Fermer ses sessions SMB', ar.close_sessions !== false)}</div>
+      <div class="field">${chk('ar_block', 'Bloquer son accès au partage concerné', ar.block_share)}</div></div>`, 'f-bar', '', 'Désactivée par défaut : chaque réaction est journalisée et réversible.');
+    onSubmit('f-bc', d => save('security', { ...d, excluded_accounts: textToList(d.excluded_accounts) }));
+    onSubmit('f-bt', d => {
+      const thresholds = { ...t };
+      Object.keys(d).filter(k => k.startsWith('t_')).forEach(k => { thresholds[k.slice(2)] = d[k] ?? t[k.slice(2)]; });
+      return save('security', { thresholds, baseline_days: d.baseline_days, risk_half_life_days: d.risk_half_life_days,
+        business_hours: { start: d.bh_start ?? 7, end: d.bh_end ?? 20, days: DAYS.map((_, i) => i).filter(i => d['bh_d' + i]) } });
+    });
+    onSubmit('f-bcap', d => save('security', d));
+    onSubmit('f-bar', d => save('security', { auto_response: { ransomware: d.ar_ransomware, close_sessions: d.ar_close, block_share: d.ar_block } }));
   }
   if (tab === 'storage') {
     const rc = st.recycle; const ar = st.archive; const cl = st.cleanup; const rp = st.repair;

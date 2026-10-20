@@ -303,6 +303,124 @@ CREATE TABLE IF NOT EXISTS quota_locks (
     locked_at REAL NOT NULL,
     unlocked_at REAL
 );
+
+-- Activité par utilisateur (journal Sécurité Windows, audit Samba, sessions SMB, imports).
+CREATE TABLE IF NOT EXISTS user_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts REAL NOT NULL,
+    user TEXT NOT NULL,
+    action TEXT NOT NULL,
+    result TEXT NOT NULL DEFAULT 'ok',
+    share_id INTEGER REFERENCES shares(id) ON DELETE SET NULL,
+    path TEXT,
+    dest_path TEXT,
+    client TEXT,
+    source TEXT NOT NULL,
+    event_id INTEGER,
+    details TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_uev_user_ts ON user_events(user, ts);
+CREATE INDEX IF NOT EXISTS idx_uev_ts ON user_events(ts);
+CREATE INDEX IF NOT EXISTS idx_uev_share_ts ON user_events(share_id, ts);
+CREATE INDEX IF NOT EXISTS idx_uev_action_ts ON user_events(action, ts);
+
+CREATE TABLE IF NOT EXISTS user_activity (
+    user TEXT NOT NULL,
+    hour INTEGER NOT NULL,
+    share_id INTEGER NOT NULL DEFAULT 0,
+    reads INTEGER DEFAULT 0,
+    writes INTEGER DEFAULT 0,
+    creates INTEGER DEFAULT 0,
+    deletes INTEGER DEFAULT 0,
+    renames INTEGER DEFAULT 0,
+    perms INTEGER DEFAULT 0,
+    denied INTEGER DEFAULT 0,
+    logons INTEGER DEFAULT 0,
+    logon_fails INTEGER DEFAULT 0,
+    total INTEGER DEFAULT 0,
+    PRIMARY KEY(user, hour, share_id)
+);
+CREATE INDEX IF NOT EXISTS idx_uact_hour ON user_activity(hour);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user TEXT PRIMARY KEY,
+    display TEXT,
+    first_seen REAL,
+    last_seen REAL,
+    clients TEXT DEFAULT '{}',
+    folders TEXT DEFAULT '{}',
+    risk REAL DEFAULT 0,
+    risk_updated REAL,
+    watch INTEGER DEFAULT 0,
+    service INTEGER DEFAULT 0,
+    capacity_bytes INTEGER DEFAULT 0,
+    notes TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS user_findings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user TEXT NOT NULL,
+    ts REAL NOT NULL,
+    detector TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    score REAL NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    details TEXT DEFAULT '{}',
+    share_id INTEGER,
+    alert_id INTEGER,
+    fingerprint TEXT NOT NULL UNIQUE,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ufind_user ON user_findings(user, ts);
+CREATE INDEX IF NOT EXISTS idx_ufind_ts ON user_findings(ts);
+
+CREATE TABLE IF NOT EXISTS user_storage (
+    share_id INTEGER NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    user TEXT NOT NULL,
+    display TEXT,
+    files INTEGER DEFAULT 0,
+    size INTEGER DEFAULT 0,
+    stale_size INTEGER DEFAULT 0,
+    newest REAL,
+    oldest REAL,
+    folders TEXT DEFAULT '[]',
+    exts TEXT DEFAULT '[]',
+    via TEXT DEFAULT 'owner',
+    updated_at REAL,
+    PRIMARY KEY(share_id, user)
+);
+
+CREATE TABLE IF NOT EXISTS user_storage_history (
+    share_id INTEGER NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    user TEXT NOT NULL,
+    day TEXT NOT NULL,
+    size INTEGER DEFAULT 0,
+    files INTEGER DEFAULT 0,
+    PRIMARY KEY(share_id, user, day)
+);
+
+CREATE TABLE IF NOT EXISTS smb_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user TEXT NOT NULL,
+    client TEXT,
+    started REAL NOT NULL,
+    last_seen REAL NOT NULL,
+    max_opens INTEGER DEFAULT 0,
+    dialect TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_smbs_user ON smb_sessions(user, last_seen);
+
+CREATE TABLE IF NOT EXISTS log_sources (
+    name TEXT PRIMARY KEY,
+    bookmark TEXT,
+    last_run REAL,
+    last_ok REAL,
+    last_error TEXT,
+    events_total INTEGER DEFAULT 0,
+    last_count INTEGER DEFAULT 0,
+    info TEXT DEFAULT '{}'
+);
 """
 
 # Colonnes ajoutées après la v1 : migrées automatiquement sur les bases existantes.
@@ -321,6 +439,8 @@ SHARE_MIGRATIONS = {
     "acl_interval_h": "INTEGER DEFAULT 24",
     "last_acl_at": "REAL",
     "matrix_depth": "INTEGER DEFAULT 2",
+    "owner_scan": "INTEGER DEFAULT 1",
+    "home_roots": "TEXT DEFAULT ''",
 }
 
 

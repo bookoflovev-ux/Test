@@ -99,7 +99,7 @@ const fileIcon = name => { const fam = DOC_FAMILY[extOf(name)]; return icon('fil
 
 const SEV_LABEL = { critical: 'Critique', warning: 'Avertissement', info: 'Info', ok: 'OK' };
 const STATUS_LABEL = { open: 'Ouverte', acknowledged: 'Acquittée', resolved: 'Résolue' };
-const CAT_LABEL = { quota: 'Quota', forecast: 'Prévision', screening: 'Filtrage', ransomware: 'Rançongiciel', path: 'Disponibilité', disk: 'Espace disque', scan: 'Analyse', system: 'Système', permissions: "Droits d'accès", paths: 'Chemins et nommage', sensitive: 'Données sensibles' };
+const CAT_LABEL = { quota: 'Quota', forecast: 'Prévision', screening: 'Filtrage', ransomware: 'Rançongiciel', path: 'Disponibilité', disk: 'Espace disque', scan: 'Analyse', system: 'Système', permissions: "Droits d'accès", paths: 'Chemins et nommage', sensitive: 'Données sensibles', behavior: 'Comportement utilisateur', security: 'Sécurité des comptes', service: 'Service VigieFS' };
 const EVENT_LABEL = { created: 'Création', modified: 'Modification', deleted: 'Suppression', moved: 'Déplacement/renommage', dossier_created: 'Dossier créé', dossier_deleted: 'Dossier supprimé', dossier_moved: 'Dossier déplacé' };
 const ROLE_LABEL = { viewer: 'Lecture seule', operator: 'Opérateur', admin: 'Administrateur' };
 const JOB_STATUS = { queued: ['neutral', 'En attente'], running: ['info', 'En cours'], done: ['ok', 'Terminée'], failed: ['critical', 'Échec'], cancelled: ['neutral', 'Annulée'], interrupted: ['warning', 'Interrompue'] };
@@ -268,6 +268,55 @@ function lineChart(el, points, { height = 220, fmtY = v => fmtBytes(v), bytes = 
     $('.hit', s).addEventListener('mouseleave', () => { cross.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); hideTip(); });
   };
   el.classList.add('chart'); draw(); state.redraw.push(draw);
+}
+/** Colonnes empilées (≤ 3 séries, couleurs --series-1..3) : légende au-dessus, infobulle par colonne. */
+function stackedChart(el, data, series, { height = 200, fmt = compact, every: labelEvery = 1 } = {}) {
+  const draw = () => {
+    const W = Math.max(el.clientWidth, 280); const H = height;
+    const m = { t: 10, r: 6, b: 24, l: 40 };
+    const iw = W - m.l - m.r; const ih = H - m.t - m.b;
+    const totals = data.map(d => d.values.reduce((a, b) => a + b, 0));
+    const ticks = niceTicks(Math.max(...totals, 0) || 1);
+    const top = ticks[ticks.length - 1];
+    const band = iw / data.length;
+    const bw = Math.max(1, Math.min(24, band - 2));
+    let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img">`;
+    ticks.forEach(t => {
+      const y = m.t + ih - (t / top) * ih;
+      svg += `<line class="${t === 0 ? 'baseline' : 'grid-line'}" x1="${m.l}" x2="${W - m.r}" y1="${y}" y2="${y}"/>`;
+      svg += `<text class="tick" x="${m.l - 6}" y="${y + 4}" text-anchor="end">${esc(fmt(t))}</text>`;
+    });
+    data.forEach((d, i) => {
+      const x = m.l + i * band + (band - bw) / 2;
+      let y = m.t + ih;
+      const last = d.values.reduce((k, v, j) => (v > 0 ? j : k), -1);
+      const tipRows = series.map((s, j) => `<span class="sw s${j + 1}"></span>${esc(s.label)} : <b>${esc(fmt(d.values[j]))}</b>`).join('<br>');
+      svg += `<g><rect class="bar-hit" x="${m.l + i * band}" y="${m.t}" width="${band}" height="${ih}" data-tip="${esc(`${d.tip || d.label}<br>${tipRows}<br>Total : <b>${fmt(totals[i])}</b>`)}"/>`;
+      d.values.forEach((v, j) => {
+        if (v <= 0) return;
+        const h = (v / top) * ih;
+        const gap = j === last ? 0 : Math.min(2, h / 2);
+        y -= h;
+        svg += j === last ? `<path class="bar s${j + 1}" d="${colPath(x, y, bw, h)}" pointer-events="none"/>`
+          : `<rect class="bar s${j + 1}" x="${x}" y="${y + gap}" width="${bw}" height="${Math.max(0, h - gap)}" pointer-events="none"/>`;
+      });
+      svg += '</g>';
+      if (i % labelEvery === 0) svg += `<text class="tick" x="${m.l + i * band + band / 2}" y="${H - 6}" text-anchor="middle">${esc(d.label)}</text>`;
+    });
+    el.innerHTML = svg + '</svg>';
+  };
+  el.classList.add('chart'); draw(); state.redraw.push(draw);
+}
+const chartLegend = series => `<div class="legend">${series.map((s, j) => `<span><i class="sw s${j + 1}"></i>${esc(s.label)}</span>`).join('')}</div>`;
+/** Carte horaire 7 jours × 24 h (une teinte, du clair au foncé) ; `bh` = horaires de travail encadrés. */
+function heatmap(matrix, { fmt = fmtNum, bh = null } = {}) {
+  const days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+  const max = Math.max(1, ...matrix.flat());
+  const level = v => (v <= 0 ? 0 : Math.min(5, 1 + Math.floor((v / max) * 4.999)));
+  const inBh = (d, h) => bh && (bh.days || []).includes(d) && h >= bh.start && h < bh.end;
+  return `<div class="heat"><div></div>${Array.from({ length: 24 }, (_, h) => `<div class="hx">${h % 3 === 0 ? h + 'h' : ''}</div>`).join('')}
+    ${matrix.map((row, d) => `<div class="hy">${days[d].slice(0, 3)}</div>${row.map((v, h) => `<div class="cell l${level(v)}${inBh(d, h) ? ' bh' : ''}" data-tip="${esc(`${days[d]} ${h}h–${h + 1}h<br><b>${fmt(v)}</b> opération(s)${inBh(d, h) ? '' : '<br>hors horaires de travail'}`)}"></div>`).join('')}`).join('')}</div>
+    <div class="heat-legend small muted">Moins ${[0, 1, 2, 3, 4, 5].map(l => `<span class="cell l${l}"></span>`).join('')} Plus${bh ? ' · <span class="cell bh l0"></span> horaires de travail' : ''}</div>`;
 }
 function hbars(items, { fmt = v => fmtBytes(v), sub } = {}) {
   if (!items.length) return '<div class="empty">Aucune donnée</div>';

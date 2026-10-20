@@ -39,7 +39,7 @@ async function viewClients(view) {
 
 // ------------------------------------------------------------------ dossiers supervisés
 const INTERVALS = [[0, 'Désactivée (manuelle)'], [60, 'Toutes les heures'], [180, 'Toutes les 3 h'], [360, 'Toutes les 6 h'], [720, 'Toutes les 12 h'], [1440, 'Quotidienne'], [10080, 'Hebdomadaire']];
-const SHARE_DEFAULTS = { quota_warn_pct: 80, quota_crit_pct: 95, scan_interval_min: 360, stale_days: 365, disk_free_warn_pct: 10, monitor_enabled: 1, screening_enabled: 1, screening_action: 'alert', quota_bytes: 0, archive_enabled: 0, archive_age_days: 730, archive_min_size_kb: 0, archive_extensions: '', archive_exclude: '', archive_criterion: 'mtime', archive_stub: 1, archive_interval_days: 30, access_path: '', acl_depth: 4, acl_interval_h: 24, matrix_depth: 2 };
+const SHARE_DEFAULTS = { quota_warn_pct: 80, quota_crit_pct: 95, scan_interval_min: 360, stale_days: 365, disk_free_warn_pct: 10, monitor_enabled: 1, screening_enabled: 1, screening_action: 'alert', quota_bytes: 0, archive_enabled: 0, archive_age_days: 730, archive_min_size_kb: 0, archive_extensions: '', archive_exclude: '', archive_criterion: 'mtime', archive_stub: 1, archive_interval_days: 30, access_path: '', acl_depth: 4, acl_interval_h: 24, matrix_depth: 2, owner_scan: 1, home_roots: '' };
 
 function shareForm(s, clients) {
   s = Object.assign({}, SHARE_DEFAULTS, s || {});
@@ -72,6 +72,10 @@ function shareForm(s, clients) {
       ${field('Analyse des droits (heures)', inp('acl_interval_h', s.acl_interval_h, 'number', 'min="0"'), '0 = manuelle. Détecte les modifications de droits.')}
       ${field('Profondeur de la matrice', inp('matrix_depth', s.matrix_depth, 'number', 'min="0" max="6"'), 'Bonne pratique : droits définis sur 2 niveaux, héritage en dessous.')}
     </div></fieldset>
+    <fieldset><legend>Utilisateurs</legend><div class="form-grid">
+      <div class="field">${chk('owner_scan', 'Calculer l\'occupation par utilisateur à chaque analyse', s.owner_scan ?? 1)}</div>
+      ${field('Racines des dossiers personnels', inp('home_roots', s.home_roots, 'text', 'placeholder="ex. Utilisateurs, Profils"'), 'Sous ces dossiers, chaque sous-dossier porte le nom de son utilisateur (Utilisateurs/alice → alice), même si le propriétaire NTFS est perdu.')}
+    </div></fieldset>
     <fieldset><legend>Archivage à froid automatique</legend>${archivePolicyFields(s)}</fieldset></div>`;
 }
 function archivePolicyFields(s, wide = false) {
@@ -90,9 +94,9 @@ function shareBody(f, base = {}) {
   d.client_id = Number(d.client_id);
   if ('quota_gb' in d) { d.quota_bytes = Math.round((d.quota_gb || 0) * GB); delete d.quota_gb; }
   d.scan_interval_min = Number(d.scan_interval_min);
-  for (const k of ['monitor_enabled', 'screening_enabled', 'archive_enabled', 'archive_stub']) d[k] = !!d[k];
+  for (const k of ['monitor_enabled', 'screening_enabled', 'archive_enabled', 'archive_stub', 'owner_scan']) d[k] = !!d[k];
   for (const k of ['quota_warn_pct', 'quota_crit_pct', 'stale_days', 'disk_free_warn_pct', 'archive_min_size_kb', 'acl_depth', 'acl_interval_h', 'matrix_depth']) d[k] = d[k] ?? 0;
-  const keep = ['client_id', 'name', 'path', 'description', 'quota_bytes', 'quota_warn_pct', 'quota_crit_pct', 'screening_enabled', 'screening_action', 'blocked_extensions', 'monitor_enabled', 'scan_interval_min', 'stale_days', 'disk_free_warn_pct', 'archive_enabled', 'archive_age_days', 'archive_min_size_kb', 'archive_extensions', 'archive_exclude', 'archive_criterion', 'archive_stub', 'archive_interval_days', 'access_path', 'acl_depth', 'acl_interval_h', 'matrix_depth'];
+  const keep = ['client_id', 'name', 'path', 'description', 'quota_bytes', 'quota_warn_pct', 'quota_crit_pct', 'screening_enabled', 'screening_action', 'blocked_extensions', 'monitor_enabled', 'scan_interval_min', 'stale_days', 'disk_free_warn_pct', 'archive_enabled', 'archive_age_days', 'archive_min_size_kb', 'archive_extensions', 'archive_exclude', 'archive_criterion', 'archive_stub', 'archive_interval_days', 'access_path', 'acl_depth', 'acl_interval_h', 'matrix_depth', 'owner_scan', 'home_roots'];
   return Object.fromEntries(keep.map(k => [k, d[k] ?? '']));
 }
 async function openShareForm(share, onDone, presetClient) {

@@ -64,6 +64,15 @@ SAUVEGARDE
 SUPERVISION DATTO RMM
 - Composant « Monitor » : integrations\datto-rmm\VigieFS-Monitor.ps1 (voir README.md).
 
+SÉCURITÉ ET UTILISATEURS (qui fait quoi)
+- Menu Sécurité > Préparer l'audit : activez en un clic l'audit des accès aux fichiers, des
+  connexions et des comptes, la taille du journal Sécurité (1 Go) et l'audit de chaque dossier
+  supervisé (ou téléchargez le script PowerShell à reporter dans la GPO du domaine).
+- VigieFS lit ensuite le journal Sécurité en continu : activité et espace occupé par utilisateur,
+  comportements anormaux (copie massive, suppressions en masse, chiffrement, accès refusés,
+  attaques de mots de passe, journal effacé…), score de risque, réactions (fermer les sessions,
+  bloquer l'accès, désactiver le compte).
+
 {reparedocs}
 Documentation complète : README.md. Licences : runtime\LICENSE.txt (Python),
 tools\WinSW-LICENSE.txt (WinSW, MIT).

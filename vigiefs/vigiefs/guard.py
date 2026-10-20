@@ -28,6 +28,7 @@ COMPONENT_LABEL = {
     "disk": "Espace disque des données",
     "memory": "Mémoire",
     "jobs": "Tâches de fond",
+    "security": "Analyse de sécurité",
 }
 STATUS_RANK = {"ok": 0, "repaired": 1, "degraded": 2, "error": 3}
 RESTARTABLE_JOBS = {"duplicates", "integrity", "acl_scan", "sensitive", "archive_simulate"}
@@ -176,6 +177,7 @@ class Guard:
         self._check_scheduler(cfg, now)
         self._check_monitor()
         self._check_events()
+        self._check_security()
         self._check_database(cfg, now)
         self._check_disk(cfg)
         self._check_memory(cfg, now)
@@ -228,6 +230,25 @@ class Guard:
         backlog = self.engine.monitor.queue.qsize()
         status = "error" if backlog > 200000 else "degraded" if backlog > 50000 else "ok"
         self._set("events", status, f"{backlog} événement(s) en attente d'écriture", backlog=backlog)
+
+    def _check_security(self):
+        sec = getattr(self.engine, "security", None)
+        if sec is None or self.engine.stopping:
+            return
+        if not merged_setting(self.db, "security").get("enabled", True):
+            self._set("security", "ok", "désactivée")
+            return
+        if not sec.alive():
+            sec.start()
+            self._repaired("security", "La collecte et l'analyse de sécurité s'étaient arrêtées")
+            self._set("security", "repaired", "relancée")
+            return
+        errors = [f"{r['name']} : {r['last_error']}" for r in self.db.query(
+            "SELECT name, last_error FROM log_sources WHERE last_error IS NOT NULL AND last_run > ?",
+            (time.time() - 3600,))]
+        n = self.db.query_one("SELECT COUNT(*) AS n FROM user_events WHERE ts > ?", (time.time() - 86400,))["n"]
+        self._set("security", "degraded" if errors else "ok",
+                  "; ".join(errors[:2]) if errors else f"{n} événement(s) utilisateur sur 24 h")
 
     def _check_database(self, cfg, now):
         try:

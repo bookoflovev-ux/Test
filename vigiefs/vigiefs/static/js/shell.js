@@ -74,6 +74,7 @@ function renderSetup() {
 // ------------------------------------------------------------------ squelette
 const NAV = [
   ['Supervision', [['#/', 'dashboard', 'Tableau de bord'], ['#/alerts', 'bell', 'Alertes', 'alerts'], ['#/events', 'activity', "Journal d'activité"]]],
+  ['Sécurité', [['#/security', 'shield', 'Sécurité & comportements'], ['#/users', 'clients', 'Utilisateurs'], ['#/logs', 'list', 'Analyse des journaux'], ['#/audit', 'check', "Préparer l'audit"]]],
   ['Gestion', [['#/clients', 'clients', 'Clients'], ['#/shares', 'folder', 'Dossiers supervisés']]],
   ['Droits & conformité', [['#/rights', 'lock', "Droits d'accès"], ['#/architecture', 'report', 'Architecture'], ['#/quotas', 'disk', 'Quotas'], ['#/smb', 'folder', 'Partages & fichiers ouverts'], ['#/sensitive', 'shield', 'Données sensibles'], ['#/health', 'check', 'Santé du serveur']]],
   ['Optimisation', [['#/optimization', 'sparkle', "Centre d'optimisation"], ['#/duplicates', 'copy', 'Doublons'], ['#/archive', 'archive', 'Archivage à froid'], ['#/recycle', 'trash', 'Corbeille']]],
@@ -204,6 +205,11 @@ const ROUTES = [
   [/^\/health$/, viewHealth],
   [/^\/service$/, viewService],
   [/^\/sensitive$/, viewSensitive],
+  [/^\/security$/, viewSecurity],
+  [/^\/users$/, viewUsers],
+  [/^\/user$/, viewUser],
+  [/^\/logs$/, viewLogs],
+  [/^\/audit$/, viewAuditSetup],
 ];
 function parseHash() {
   const raw = location.hash.replace(/^#/, '') || '/';
@@ -222,7 +228,8 @@ function route() {
   $$('[data-nav]').forEach(a => {
     const href = a.dataset.nav.slice(1);
     a.classList.toggle('active', href === '/' ? path === '/' : path === href || path.startsWith(href + '/') || (href === '/shares' && path.startsWith('/share/')) || (href === '/rights' && path.startsWith('/matrix/'))
-      || (href === '/repair' && path.startsWith('/reparedocs/')) || (href === '/architecture' && path.startsWith('/restructure/')));
+      || (href === '/repair' && path.startsWith('/reparedocs/')) || (href === '/architecture' && path.startsWith('/restructure/'))
+      || (href === '/users' && path === '/user'));
   });
   scrollTo(0, 0);
   for (const [re, fn] of ROUTES) {

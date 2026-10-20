@@ -27,6 +27,8 @@ CATEGORY_LABELS = {
     "paths": "Chemins et nommage",
     "sensitive": "Données sensibles",
     "service": "Service VigieFS",
+    "behavior": "Comportement utilisateur",
+    "security": "Sécurité des comptes",
 }
 
 

@@ -27,6 +27,7 @@ JOB_LABELS = {
     "restructure_prepare": "Réorganisation : création des dossiers",
     "restructure_execute": "Réorganisation : déplacement vérifié",
     "restructure_rollback": "Réorganisation : retour arrière",
+    "security_import": "Analyse d'un journal importé",
 }
 
 

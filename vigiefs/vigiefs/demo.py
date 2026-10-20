@@ -14,6 +14,7 @@ import random
 import time
 
 from . import docrepair, sensitive
+from .activity import ActivityStore, ShareMapper
 from .db import Database
 
 DEMO_FOLDER = "demo-partages"
@@ -198,6 +199,118 @@ def _transports(w, rng):
     w.bytes("Plannings/sauvegarde.wbk", os.urandom(70000), 250)
 
 
+# Utilisateurs fictifs : (compte, poste, dossiers habituels, opérations par heure, part de lectures)
+CABINET_USERS = [
+    ("CABINET\\alice", "PC-ALICE", ["Dossiers clients", "Direction"], 30, 0.7),
+    ("CABINET\\bob", "PC-BOB", ["Dossiers clients", "Partage temporaire", "Utilisateurs"], 25, 0.6),
+    ("CABINET\\carole", "PC-COMPTA", ["Comptabilité"], 35, 0.55),
+    ("CABINET\\david", "PC-DAVID", ["Direction", "Dossiers clients"], 15, 0.8),
+    ("CABINET\\emma", "PC-RH", ["RH"], 20, 0.65),
+    ("CABINET\\stagiaire", "PC-STAGE", ["Partage temporaire", "Dossiers clients"], 10, 0.8),
+]
+TRANSPORTS_USERS = [
+    ("LEROY\\paul", "PC-EXPLOIT-02", ["Plannings", "Chauffeurs"], 30, 0.6),
+    ("LEROY\\julie", "PC-COMPTA-01", ["Factures", "Plannings"], 25, 0.6),
+]
+
+
+def _files_of(root):
+    out = {}
+    for dirpath, _dirs, names in os.walk(root):
+        rel = os.path.relpath(dirpath, root).replace("\\", "/")
+        top = "" if rel == "." else rel.split("/", 1)[0]
+        out.setdefault(top, []).extend(os.path.join(dirpath, n) for n in names)
+    return out
+
+
+def _activity(db, shares, rng, now):
+    """Quatre semaines d'activité de bureau fictive, puis des comportements anormaux à repérer (dernières 24 h)."""
+    store = ActivityStore(db)
+    mapper = ShareMapper(shares)
+    events = []
+
+    def add(ts, user, action, path=None, client=None, **kw):
+        events.append({"ts": ts, "user": user, "action": action, "abs": path, "client": client, "source": "demo", **kw})
+
+    for share, users in ((shares[0], CABINET_USERS), (shares[1], TRANSPORTS_USERS)):
+        files = _files_of(share["path"])
+        for day in range(28, 0, -1):
+            lt = time.localtime(now - day * 86400)
+            if lt.tm_wday >= 5:
+                continue
+            for user, pc, folders, per_hour, read_share in users:
+                start = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 8, rng.randint(15, 59), 0, 0, 0, -1))
+                add(start - 60, user, "logon", client=pc, details={"type": "réseau"})
+                for h in range(9):
+                    for _ in range(max(1, int(rng.gauss(per_hour, per_hour / 4)))):
+                        pool = files.get(rng.choice(folders)) or files.get("") or []
+                        if not pool:
+                            continue
+                        roll = rng.random()
+                        action = "read" if roll < read_share else "write" if roll < 0.93 else "create" if roll < 0.97 \
+                            else "rename" if roll < 0.99 else "delete"
+                        add(start + h * 3600 + rng.random() * 3500, user, action, rng.choice(pool), pc)
+    # Ancien associé : actif il y a trois mois, puis plus rien.
+    for day in range(120, 90, -1):
+        lt = time.localtime(now - day * 86400)
+        if lt.tm_wday < 5:
+            base = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 10, 0, 0, 0, 0, -1))
+            for k in range(12):
+                add(base + k * 600, "CABINET\\ancien.associe", "read",
+                    os.path.join(shares[0]["path"], "Direction", "Stratégie 2025.docx"), "PC-ASSOCIE")
+    lt = time.localtime(now)
+    night = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 2, 5, 0, 0, 0, -1))
+    if night > now - 3600:
+        night -= 86400
+    cab, tr = shares[0]["path"], shares[1]["path"]
+    # 1. bob, sur le départ : copie massive de nuit depuis un poste inconnu, y compris RH et Direction.
+    for k in range(1650):
+        add(night + k * 2, "CABINET\\bob", "read", os.path.join(cab, rng.choice(["Dossiers clients", "RH", "Direction",
+                                                                                 "Comptabilité"]),
+                                                               f"Dossier {k % 140:03d}", f"Pièce {k}.pdf"), "PC-INCONNU-07")
+    # 2. carole : suppressions en masse dans la comptabilité 2023.
+    t = now - 3 * 3600
+    for k in range(360):
+        add(t + k, "CABINET\\carole", "delete", os.path.join(cab, "Comptabilité", "2023", f"Pièce comptable {k:04d}.pdf"),
+            "PC-COMPTA")
+    # 3. stagiaire : cherche à ouvrir RH et Direction (refusé).
+    t = now - 5 * 3600
+    for k in range(48):
+        add(t + k * 40, "CABINET\\stagiaire", "denied", os.path.join(cab, rng.choice(["RH/Paie", "Direction/Conseil"]),
+                                                                    f"document {k}.docx"), "PC-STAGE", result="fail")
+    # 4. Mots de passe : force brute sur un compte, puis pulvérisation depuis un même poste.
+    t = now - 6 * 3600
+    for k in range(24):
+        add(t + k * 20, "CABINET\\direction", "logon_fail", client="10.0.5.20", result="fail",
+            details={"motif": "mot de passe incorrect", "type": "réseau"})
+    add(t + 500, "direction", "lockout", client="PC-ACCUEIL", result="fail")
+    for k, u in enumerate(["comptable", "secretariat", "associe1", "associe2", "accueil", "scanner", "test"]):
+        add(t + 1800 + k * 30, f"CABINET\\{u}", "logon_fail", client="10.0.6.66", result="fail",
+            details={"motif": "compte inconnu" if u in ("test", "scanner") else "mot de passe incorrect"})
+    # 5. david modifie les droits de nombreux dossiers ; l'ancien associé se reconnecte.
+    t = now - 4 * 3600
+    for k, folder in enumerate(["Dossiers clients", "Direction", "RH", "Comptabilité", "Partage temporaire"] * 3):
+        add(t + k * 30, "CABINET\\david", "perm", os.path.join(cab, folder), "PC-DAVID")
+    for k in range(30):
+        add(now - 2 * 3600 + k * 60, "CABINET\\ancien.associe", "read",
+            os.path.join(cab, "Dossiers clients", "SCI Les Tilleuls", f"Pièce {k}.pdf"), "PORTABLE-PERSO")
+    # 6. Transports : chiffrement en cours depuis un poste d'exploitation, journal de sécurité effacé.
+    t = now - 90 * 60
+    for k in range(230):
+        name = os.path.join(tr, "Plannings", "2024", f"Semaine {k % 52 + 1:02d} - v{k}.xlsx")
+        add(t + k * 2, "LEROY\\paul", "rename", name, "PC-EXPLOIT-02", abs_dest=name + ".lockbit")
+    add(t + 600, "LEROY\\admin.tmp", "audit_cleared", client="PC-EXPLOIT-02")
+    add(t + 650, "LEROY\\admin.tmp", "group_add", details={"membre": "admin.tmp", "groupe": "Admins du domaine"})
+    n = store.ingest(events, mapper)
+    for user, values in (("cabinet\\bob", {"watch": 1, "notes": "Départ prévu à la fin du mois : surveillance renforcée.",
+                                            "capacity_bytes": 400 * 1024}),
+                         ("cabinet\\stagiaire", {"notes": "Stage jusqu'au 31/12, accès limité au Partage temporaire."})):
+        sets = ", ".join(f"{k}=?" for k in values)
+        db.execute(f"UPDATE user_profiles SET {sets} WHERE user=?", (*values.values(), user))
+    store.source_update("demo", True, n, info={"generated": now})
+    return n
+
+
 def create(data_dir, seed=7):
     """Crée les fichiers et enregistre les clients / dossiers supervisés. Renvoie un résumé."""
     data_dir = os.path.abspath(data_dir)
@@ -238,6 +351,8 @@ def create(data_dir, seed=7):
             "INSERT INTO shares(client_id, name, path, description, quota_bytes, scan_interval_min, monitor_enabled, "
             "screening_enabled, stale_days, created_at, access_path, archive_age_days) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             (cid, share_name, root, "Dossier de démonstration", int(w.size / 0.88), 60, 1, 1, 365, now, access, 1095))
+        if client.startswith("Cabinet"):
+            db.execute("UPDATE shares SET home_roots='Utilisateurs' WHERE id=?", (sid,))
         shares.append({"id": sid, "client": client, "name": share_name, "path": root, "files": w.count,
                        "size": w.size})
     db.execute("INSERT INTO quotas(share_id, rel_path, limit_bytes, warn_pct, crit_pct, mode, enforcement, auto_apply, "
@@ -247,9 +362,12 @@ def create(data_dir, seed=7):
     for key, values in (("recycle", {"dir": os.path.join(data_dir, "demo-corbeille"), "retention_days": 30}),
                         ("archive", {"root": os.path.join(data_dir, "demo-archives"), "verify_hash": True}),
                         ("screening", {"quarantine_dir": os.path.join(data_dir, "demo-quarantaine")}),
-                        ("general", {"company_name": "Démo VigieFS"})):
+                        ("general", {"company_name": "Démo VigieFS"}),
+                        # Démo : seule l'activité fictive est analysée (rien n'est lu du poste lui-même).
+                        ("security", {"collect_windows": False, "collect_samba": False, "smb_sampling": False})):
         current = db.get_setting(key, {}) or {}
         current.update(values)
         db.set_setting(key, current)
+    _activity(db, [{"id": s["id"], "name": s["name"], "path": s["path"]} for s in shares], rng, now)
     db.audit("console", "création du jeu de démonstration", base)
     return {"created": True, "base": base, "shares": shares}
