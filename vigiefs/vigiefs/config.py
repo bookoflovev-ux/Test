@@ -176,6 +176,16 @@ DEFAULT_SETTINGS = {
         "risk_half_life_days": 7,
         "auto_response": {"ransomware": False, "close_sessions": True, "block_share": False},
     },
+    "hyperv": {
+        "enabled": True,
+        "interval_h": 6,                  # inventaire de l'hôte et découverte des données des VM
+        "discover": True,                 # partages et volumes des VM en marche (CIM, sinon net view)
+        "checkpoint_days": 7,             # point de contrôle « oublié » au-delà
+        "inactive_days": 90,              # VM éteinte sans écriture sur ses disques
+        "dynamic_full_pct": 90,
+        "fragmentation_pct": 30,
+        "demo": False,
+    },
     "sensitive": {
         "max_file_mb": 20,
         "extensions": [".txt", ".csv", ".log", ".xml", ".json", ".html", ".htm", ".md", ".docx", ".xlsx", ".pptx",

@@ -29,6 +29,7 @@ CATEGORY_LABELS = {
     "service": "Service VigieFS",
     "behavior": "Comportement utilisateur",
     "security": "Sécurité des comptes",
+    "virtualization": "Virtualisation",
 }
 
 

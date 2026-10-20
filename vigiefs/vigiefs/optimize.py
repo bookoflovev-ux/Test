@@ -7,7 +7,7 @@ import time
 from collections import defaultdict
 
 from .config import merged_setting
-from .rules import long_path, relpath
+from .rules import is_vm_file, long_path, relpath
 from .storage import STUB_SUFFIX, is_within
 
 # Catégories de fichiers inutiles. `age` = clé du paramètre d'ancienneté minimale (Paramètres › Stockage).
@@ -57,7 +57,7 @@ class JunkClassifier:
 
     def classify(self, name, size, mtime):
         low = name.lower()
-        if low in SAFE_NAMES or name.endswith(STUB_SUFFIX):
+        if low in SAFE_NAMES or name.endswith(STUB_SUFFIX) or is_vm_file(low):
             return None
         age = self.now - mtime
         for key, patterns in self.rules:
@@ -70,11 +70,11 @@ class JunkClassifier:
         return None
 
 
-def run_cleanup(share, categories, recycle, actor, ctx, db):
+def run_cleanup(share, categories, recycle, actor, ctx, db, protected=()):
     """Déplace vers la corbeille les fichiers des catégories choisies (conditions réévaluées à l'exécution)."""
     root = os.path.realpath(share["path"])
     classifier = JunkClassifier.from_settings(db)
-    skip = [recycle.root(), merged_setting(db, "archive").get("root")]
+    skip = [recycle.root(), merged_setting(db, "archive").get("root"), *protected]
     moved = defaultdict(lambda: [0, 0])
     errors = []
     seen = 0
@@ -153,8 +153,8 @@ def find_duplicates(shares, min_size=1024 * 1024, ctx=None, skip_roots=(), max_g
             dirnames[:] = [d for d in dirnames if not os.path.islink(os.path.join(dirpath, d))
                            and not any(r and is_within(os.path.join(dirpath, d), r) for r in skip_roots)]
             for fn in filenames:
-                if fn.startswith("~$") or fn.endswith(STUB_SUFFIX):
-                    continue
+                if fn.startswith("~$") or fn.endswith(STUB_SUFFIX) or is_vm_file(fn):
+                    continue            # deux disques virtuels identiques ne sont pas des doublons à supprimer
                 p = os.path.join(dirpath, fn)
                 try:
                     st = os.lstat(p)

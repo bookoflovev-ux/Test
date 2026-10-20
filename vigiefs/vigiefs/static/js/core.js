@@ -99,7 +99,7 @@ const fileIcon = name => { const fam = DOC_FAMILY[extOf(name)]; return icon('fil
 
 const SEV_LABEL = { critical: 'Critique', warning: 'Avertissement', info: 'Info', ok: 'OK' };
 const STATUS_LABEL = { open: 'Ouverte', acknowledged: 'Acquittée', resolved: 'Résolue' };
-const CAT_LABEL = { quota: 'Quota', forecast: 'Prévision', screening: 'Filtrage', ransomware: 'Rançongiciel', path: 'Disponibilité', disk: 'Espace disque', scan: 'Analyse', system: 'Système', permissions: "Droits d'accès", paths: 'Chemins et nommage', sensitive: 'Données sensibles', behavior: 'Comportement utilisateur', security: 'Sécurité des comptes', service: 'Service VigieFS' };
+const CAT_LABEL = { quota: 'Quota', forecast: 'Prévision', screening: 'Filtrage', ransomware: 'Rançongiciel', path: 'Disponibilité', disk: 'Espace disque', scan: 'Analyse', system: 'Système', permissions: "Droits d'accès", paths: 'Chemins et nommage', sensitive: 'Données sensibles', behavior: 'Comportement utilisateur', security: 'Sécurité des comptes', service: 'Service VigieFS', virtualization: 'Virtualisation' };
 const EVENT_LABEL = { created: 'Création', modified: 'Modification', deleted: 'Suppression', moved: 'Déplacement/renommage', dossier_created: 'Dossier créé', dossier_deleted: 'Dossier supprimé', dossier_moved: 'Dossier déplacé' };
 const ROLE_LABEL = { viewer: 'Lecture seule', operator: 'Opérateur', admin: 'Administrateur' };
 const JOB_STATUS = { queued: ['neutral', 'En attente'], running: ['info', 'En cours'], done: ['ok', 'Terminée'], failed: ['critical', 'Échec'], cancelled: ['neutral', 'Annulée'], interrupted: ['warning', 'Interrompue'] };

@@ -75,7 +75,7 @@ function renderSetup() {
 const NAV = [
   ['Supervision', [['#/', 'dashboard', 'Tableau de bord'], ['#/alerts', 'bell', 'Alertes', 'alerts'], ['#/events', 'activity', "Journal d'activité"]]],
   ['Sécurité', [['#/security', 'shield', 'Sécurité & comportements'], ['#/users', 'clients', 'Utilisateurs'], ['#/logs', 'list', 'Analyse des journaux'], ['#/audit', 'check', "Préparer l'audit"]]],
-  ['Gestion', [['#/clients', 'clients', 'Clients'], ['#/shares', 'folder', 'Dossiers supervisés']]],
+  ['Gestion', [['#/clients', 'clients', 'Clients'], ['#/shares', 'folder', 'Dossiers supervisés'], ['#/virtualization', 'disk', 'Virtualisation (Hyper-V)']]],
   ['Droits & conformité', [['#/rights', 'lock', "Droits d'accès"], ['#/architecture', 'report', 'Architecture'], ['#/quotas', 'disk', 'Quotas'], ['#/smb', 'folder', 'Partages & fichiers ouverts'], ['#/sensitive', 'shield', 'Données sensibles'], ['#/health', 'check', 'Santé du serveur']]],
   ['Optimisation', [['#/optimization', 'sparkle', "Centre d'optimisation"], ['#/duplicates', 'copy', 'Doublons'], ['#/archive', 'archive', 'Archivage à froid'], ['#/recycle', 'trash', 'Corbeille']]],
   ['Outils', [['#/repair', 'wrench', 'Réparation de fichiers'], ['#/jobs', 'tasks', 'Tâches', 'jobs'], ['#/reports', 'list', 'Rapports']]],
@@ -210,6 +210,7 @@ const ROUTES = [
   [/^\/user$/, viewUser],
   [/^\/logs$/, viewLogs],
   [/^\/audit$/, viewAuditSetup],
+  [/^\/virtualization$/, viewVirtualization],
 ];
 function parseHash() {
   const raw = location.hash.replace(/^#/, '') || '/';

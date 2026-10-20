@@ -201,13 +201,14 @@ async function shareArchive(pane, s) {
       ${archivedTable(items, false)}</div>`;
   const policy = () => { const d = formData($('#policy', pane)); return { age_days: d.archive_age_days, min_size_kb: d.archive_min_size_kb, extensions: d.archive_extensions, exclude: d.archive_exclude, criterion: d.archive_criterion, stub: d.archive_stub }; };
   const showSim = r => {
-    $('#sim-body', pane).innerHTML = r.count ? `
+    const vmNote = r.vm_protected ? `<div class="banner info" style="margin-bottom:12px">${icon('shield')}<span>${fmtNum(r.vm_protected)} fichier(s) de machine virtuelle (disques, configurations) protégés : jamais archivés.</span></div>` : '';
+    $('#sim-body', pane).innerHTML = vmNote + (r.count ? `
       <div class="tiles" style="margin-bottom:16px">${tile({ label: 'Espace libérable', value: fmtBytes(r.size), ic: 'sparkle', tone: 'good', sub: s.last_size ? `${fmtPct(r.size * 100 / s.last_size, 0)} du dossier` : '' })}${tile({ label: 'Fichiers concernés', value: fmtNum(r.count), ic: 'file', tone: 'aqua', sub: r.oldest ? `le plus ancien : ${fmtDay(r.oldest)}` : '' })}</div>
       <div class="grid cols-2"><div><h3>Par type</h3>${hbars(r.by_extension.slice(0, 8).map(e => ({ name: e.name, value: e.size, count: e.count })), { sub: i => `${fmtNum(i.count)} fichiers` })}</div>
       <div><h3>Par sous-dossier</h3>${hbars(r.by_folder.slice(0, 8).map(e => ({ name: e.name, value: e.size, count: e.count })), { sub: i => `${fmtNum(i.count)} fichiers` })}</div></div>
       <h3>Plus gros fichiers concernés</h3>${fileTable(r.samples.slice(0, 50))}
       ${can('operator') ? `<div class="btn-row" style="margin-top:14px"><button class="btn primary" data-act="run" ${root ? '' : 'disabled'}>${icon('archive')} Archiver ces ${fmtNum(r.count)} fichiers</button></div>` : ''}`
-      : emptyState('check', 'Rien à archiver', 'Aucun fichier ne correspond à cette règle.', '', 'good');
+      : emptyState('check', 'Rien à archiver', 'Aucun fichier ne correspond à cette règle.', '', 'good'));
   };
   const syncRestore = () => { const b = $('[data-act=restore]', pane); if (b) b.disabled = !$$('[data-item]:checked', pane).length; };
   pane.addEventListener('change', e => { if (e.target.matches('[data-all]')) $$('[data-item]', pane).forEach(c => { c.checked = e.target.checked; }); syncRestore(); });

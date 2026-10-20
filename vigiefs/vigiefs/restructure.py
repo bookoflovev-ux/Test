@@ -33,7 +33,7 @@ import unicodedata
 from collections import Counter, defaultdict
 
 from . import pathcheck, system
-from .rules import fmt_day, long_path, plausible_mtime, safe_localtime, strip_long
+from .rules import fmt_day, is_vm_file, long_path, plausible_mtime, safe_localtime, strip_long
 
 RULES = {
     "naming": ("Noms non conformes", True),
@@ -176,12 +176,15 @@ def walk(root, skip_roots=(), cancel=None, keep_files_over=2000):
                 issues.append("case_conflict")
             if is_dir:
                 if os.path.normcase(strip_long(e.path)) in skip:
+                    node["locked"] = True       # contient un dossier protégé (VM, corbeille, archives)
                     continue
                 node["subdirs"].append(e.name)
                 stack.append((e.path, _join(rel, e.name), st.st_mtime))
             else:
                 node["files"] += 1
                 node["size"] += st.st_size
+                if is_vm_file(e.name):
+                    node["locked"] = True       # disque ou configuration de machine virtuelle
                 good = plausible_mtime(st.st_mtime, now)
                 if good:                    # une date fausse (1601, 1965, 2107…) ne rend pas un dossier « récent »
                     node["newest"] = max(node["newest"], st.st_mtime)
@@ -199,15 +202,17 @@ def walk(root, skip_roots=(), cancel=None, keep_files_over=2000):
         n = dirs[rel]
         files, size, newest = n["files"], n["size"], n["newest"]
         maxlen = max(n["hist"]) if n["hist"] else 0
+        locked = bool(n.get("locked"))
         for s in n["subdirs"]:
             c = dirs.get(_join(rel, s))
             if c is None:
                 continue
+            locked = locked or c["t_locked"]
             files += c["t_files"]
             size += c["t_size"]
             newest = max(newest, c["t_newest"])
             maxlen = max(maxlen, len(s) + (1 + c["t_maxlen"] if c["t_maxlen"] else 0))
-        n.update(t_files=files, t_size=size, t_newest=newest, t_maxlen=maxlen)
+        n.update(t_files=files, t_size=size, t_newest=newest, t_maxlen=maxlen, t_locked=locked)
     return dirs
 
 
@@ -395,9 +400,30 @@ def propose(share, settings, path_rules, skip_roots=(), cancel=None, now=None):
             add("template", "move_dir", sub, dest=cat, files=c.get("t_files", 0), size=c.get("t_size", 0),
                 reason=f"rangé dans « {cat} »")
 
+    # Machines virtuelles : un dossier qui en contient (lui ou un descendant) n'est ni renommé ni déplacé, et un
+    # disque virtuel ne change jamais de place (la configuration de la VM pointe vers son chemin exact).
+    locked = {rel for rel, n in dirs.items() if n.get("t_locked")}
+    kept, protected = [], {"dirs": 0, "files": 0}
+    for o in ops:
+        if (o["type"] in DIR_OPS or o["type"] == "remove_empty") and o["src"] in locked:
+            protected["dirs"] += 1
+            continue
+        if o["type"] == "rename_file" and is_vm_file(o["src"]):
+            protected["files"] += 1
+            continue
+        if o["type"] == "move_files":
+            vm = [f for f in o["files_list"] if is_vm_file(f)]
+            if vm:
+                protected["files"] += len(vm)
+                o["files_list"] = [f for f in o["files_list"] if not is_vm_file(f)]
+                o["files"] = len(o["files_list"])
+                if not o["files_list"]:
+                    continue
+        kept.append(o)
+    ops = kept
     plan = {"version": 1, "share_id": share["id"], "root": share["path"], "prefix": prefix,
             "generated_at": now, "settings": s, "path_rules": pr, "ops": ops, "options": dict(OPTION_DEFAULTS),
-            "archive_folder": archive}
+            "archive_folder": archive, "protected": protected}
     plan["options"].update(verify_hash=bool(s.get("verify_hash")), vss_snapshot=bool(s.get("vss_snapshot", True)),
                            threads=int(s.get("robocopy_threads", 8)))
     return plan, dirs

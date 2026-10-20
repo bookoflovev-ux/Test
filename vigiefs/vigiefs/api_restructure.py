@@ -76,7 +76,7 @@ def register(app, c):
         def run(ctx):
             ctx.progress(force=True, phase="Inventaire de l'arborescence")
             plan, dirs = rs.propose(share, merged_setting(db, "restructure"), merged_setting(db, "paths"),
-                                    engine.skip_roots(), cancel=lambda: ctx.cancelled)
+                                    engine.skip_roots() + engine.protected_roots(), cancel=lambda: ctx.cancelled)
             pid = db.execute("INSERT INTO restructure_plans(share_id, name, status, data, created_at, created_by) "
                              "VALUES(?,?, 'draft', '{}', ?, ?)",
                              (share["id"], time.strftime("Proposition du %d/%m/%Y %H:%M"), time.time(), ctx.actor))

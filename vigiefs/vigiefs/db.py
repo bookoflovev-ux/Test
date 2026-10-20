@@ -411,6 +411,26 @@ CREATE TABLE IF NOT EXISTS smb_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_smbs_user ON smb_sessions(user, last_seen);
 
+CREATE TABLE IF NOT EXISTS hyperv_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at REAL NOT NULL,
+    data TEXT NOT NULL,
+    findings TEXT DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS hyperv_guests (
+    vm_id TEXT PRIMARY KEY,
+    name TEXT,
+    checked_at REAL,
+    data TEXT DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS hyperv_links (
+    vm_id TEXT NOT NULL,
+    share_id INTEGER NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    PRIMARY KEY(vm_id, share_id)
+);
+
 CREATE TABLE IF NOT EXISTS log_sources (
     name TEXT PRIMARY KEY,
     bookmark TEXT,

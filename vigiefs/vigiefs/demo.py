@@ -311,6 +311,106 @@ def _activity(db, shares, rng, now):
     return n
 
 
+GB = 1024 ** 3
+
+
+def hyperv_raw(now):
+    """Inventaire Hyper-V fictif, au format exact renvoyé par le script PowerShell de VigieFS."""
+    day = 86400
+    hv = "D:\\Hyper-V"
+
+    def disk(name, vtype, size, file_size, mtime, parent=None, chain=()):
+        return {"path": f"{hv}\\Virtual Hard Disks\\{name}", "controller": "SCSI",
+                "vhd": {"format": "VHDX", "type": vtype, "file_size": int(file_size), "size": int(size),
+                        "min_size": int(file_size * 0.8), "frag": 0, "parent": parent, "mtime": int(mtime),
+                        "chain": list(chain)}}
+
+    def vm(vid, name, state, os_name, fqdn, ip, disks, snaps=(), uptime=0, mem=8 * GB):
+        return {"id": vid, "name": name, "state": state, "uptime": uptime, "generation": 2, "cpus": 4, "memory": mem if
+                state == "Running" else 0, "memory_startup": mem, "path": f"{hv}\\{name}",
+                "config": f"{hv}\\{name}", "snapshot_path": f"{hv}\\{name}", "notes": "", "created": int(now - 900 * day),
+                "replication": "Disabled", "heartbeat": "OkApplicationsHealthy" if state == "Running" else "",
+                "guest": {"fqdn": fqdn, "os": os_name, "os_version": "10.0.20348", "ips": ip} if state == "Running" else {},
+                "disks": disks, "snapshots": list(snaps),
+                "nics": [{"switch": "LAN", "ips": [ip] if ip and state == "Running" else [], "mac": "00155D0A0B01"}]}
+
+    srv_avhdx = f"{hv}\\Virtual Hard Disks\\SRV-FICHIERS-DATA.vhdx"
+    vms = [
+        vm("6f1c2a10-0001-4d1e-9a01-000000000001", "SRV-FICHIERS-CABINET", "Running", "Windows Server 2022 Standard",
+           "srv-fichiers.cabinet.local", "192.168.10.20",
+           [disk("SRV-FICHIERS-OS.vhdx", "Dynamic", 80 * GB, 41 * GB, now - 60),
+            disk("SRV-FICHIERS-DATA_6A1B.avhdx", "Differencing", 1024 * GB, 74 * GB, now - 60, parent=srv_avhdx,
+                 chain=[{"path": srv_avhdx, "file_size": 612 * GB}])],
+           [{"name": "Avant mise à jour Windows", "created": int(now - 41 * day), "type": "Standard"}], uptime=19 * day),
+        vm("6f1c2a10-0002-4d1e-9a01-000000000002", "SRV-TRANSPORTS", "Running", "Windows Server 2019 Standard",
+           "srv-transports.leroy.local", "192.168.20.15",
+           [disk("SRV-TRANSPORTS.vhdx", "Dynamic", 500 * GB, 236 * GB, now - 120)], uptime=44 * day),
+        vm("6f1c2a10-0003-4d1e-9a01-000000000003", "SRV-AD01", "Running", "Windows Server 2022 Standard",
+           "srv-ad01.cabinet.local", "192.168.10.10", [disk("SRV-AD01.vhdx", "Dynamic", 60 * GB, 19 * GB, now - 30)],
+           uptime=19 * day, mem=4 * GB),
+        vm("6f1c2a10-0004-4d1e-9a01-000000000004", "VM-ERP-2016", "Off", "", "", "",
+           [disk("VM-ERP-2016.vhdx", "Dynamic", 250 * GB, 182 * GB, now - 412 * day)]),
+        vm("6f1c2a10-0005-4d1e-9a01-000000000005", "MODELE-W2019", "Off", "", "", "",
+           [disk("MODELE-W2019.vhdx", "Fixed", 40 * GB, 40 * GB, now - 730 * day)]),
+    ]
+    return {"available": True, "error": None,
+            "host": {"name": "HV-01", "vhd_path": f"{hv}\\Virtual Hard Disks", "vm_path": hv, "cpus": 32,
+                     "memory": 256 * GB},
+            "vms": vms,
+            "volumes": [{"root": "D:\\", "size": 2000 * GB, "free": 165 * GB, "label": "VMs"},
+                        {"root": "C:\\", "size": 240 * GB, "free": 120 * GB, "label": "Système"}],
+            "orphans": [{"path": f"{hv}\\Virtual Hard Disks\\ancien-srv-mail.vhdx", "size": 210 * GB,
+                         "mtime": int(now - 1100 * day)},
+                        {"path": f"{hv}\\Virtual Hard Disks\\copie SRV-FICHIERS-DATA.vhdx", "size": 95 * GB,
+                         "mtime": int(now - 300 * day)}]}
+
+
+HYPERV_GUESTS = {
+    "6f1c2a10-0001-4d1e-9a01-000000000001": {
+        "target": "srv-fichiers.cabinet.local", "method": "cim", "error": None,
+        "shares": [{"name": "Commun", "path": "D:\\Partages\\Commun", "description": "Documents du cabinet"},
+                   {"name": "Direction", "path": "D:\\Partages\\Direction", "description": ""},
+                   {"name": "Scans", "path": "D:\\Partages\\Scans", "description": "Copieur"}],
+        "volumes": [{"drive": "C:", "size": 80 * GB, "free": 39 * GB, "label": ""},
+                    {"drive": "D:", "size": 1024 * GB, "free": 562 * GB, "label": "DATA"}]},
+    "6f1c2a10-0002-4d1e-9a01-000000000002": {
+        "target": "srv-transports.leroy.local", "method": "net view", "error": None,
+        "shares": [{"name": "Exploitation", "path": None, "description": ""},
+                   {"name": "Compta", "path": None, "description": "Comptabilité"}],
+        "volumes": []},
+    "6f1c2a10-0003-4d1e-9a01-000000000003": {
+        "target": "srv-ad01.cabinet.local", "method": "cim", "error": None, "shares": [],
+        "volumes": [{"drive": "C:", "size": 60 * GB, "free": 42 * GB, "label": ""}]},
+}
+
+
+def _hyperv(db, shares, now):
+    """Hôte Hyper-V fictif : inventaire, données des VM, liens vers les dossiers de démonstration, constats."""
+    import types
+    from .alerts import AlertManager
+    from .hyperv import HyperVService, normalize
+    current = db.get_setting("hyperv", {}) or {}
+    db.set_setting("hyperv", {**current, "demo": True})
+    for vid, data in HYPERV_GUESTS.items():
+        db.execute("INSERT OR REPLACE INTO hyperv_guests(vm_id, name, checked_at, data) VALUES(?,?,?,?)",
+                   (vid, data["target"], now - 3600, __import__("json").dumps({**data, "checked_at": now - 3600})))
+    db.executemany("INSERT OR IGNORE INTO hyperv_links(vm_id, share_id) VALUES(?,?)",
+                   [("6f1c2a10-0001-4d1e-9a01-000000000001", shares[0]["id"]),
+                    ("6f1c2a10-0002-4d1e-9a01-000000000002", shares[1]["id"])])
+    eng = types.SimpleNamespace(db=db, alerts=AlertManager(db), shares=lambda: db.query("SELECT * FROM shares"))
+    svc = HyperVService(eng)
+    # Historique : il y a une semaine, les disques étaient un peu plus petits (croissance visible).
+    older = hyperv_raw(now - 7 * 86400)
+    for vm in older["vms"]:
+        for d in vm["disks"]:
+            d["vhd"]["file_size"] = int(d["vhd"]["file_size"] * 0.97)
+    db.execute("INSERT INTO hyperv_snapshots(created_at, data, findings) VALUES(?,?,?)",
+               (now - 7 * 86400, __import__("json").dumps(normalize(older, now - 7 * 86400)), "[]"))
+    res = svc.store(normalize(hyperv_raw(now), now))
+    db.set_setting("vm_protected_paths", [])      # chemins fictifs (D:\Hyper-V) : rien à protéger sur ce poste
+    return res
+
+
 def create(data_dir, seed=7):
     """Crée les fichiers et enregistre les clients / dossiers supervisés. Renvoie un résumé."""
     data_dir = os.path.abspath(data_dir)
@@ -369,5 +469,6 @@ def create(data_dir, seed=7):
         current.update(values)
         db.set_setting(key, current)
     _activity(db, [{"id": s["id"], "name": s["name"], "path": s["path"]} for s in shares], rng, now)
+    _hyperv(db, shares, now)
     db.audit("console", "création du jeu de démonstration", base)
     return {"created": True, "base": base, "shares": shares}

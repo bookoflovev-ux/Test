@@ -21,6 +21,31 @@ def plausible_mtime(ts, now=None):
     return ts is not None and DOS_EPOCH <= ts <= (now or time.time()) + 2 * 86400
 
 
+# Fichiers de machines virtuelles (Hyper-V, VMware) : jamais archivés, nettoyés, dédoublonnés ni déplacés.
+# Un disque virtuel déplacé, remplacé ou supprimé casse la VM (sa configuration pointe vers ce chemin exact).
+VM_FILE_EXT = (".vhd", ".vhdx", ".avhd", ".avhdx", ".vhds", ".vmcx", ".vmrs", ".vmgs", ".vsv", ".vmdk", ".vmx", ".vmxf",
+               ".vmsd", ".vmsn", ".vmss", ".vmem", ".nvram", ".hrl", ".rct", ".mrt")
+
+
+def is_vm_file(name):
+    return str(name).lower().endswith(VM_FILE_EXT)
+
+
+def contains_vm_files(path, limit=20000):
+    """Un dossier contient-il des fichiers de machine virtuelle ? (parcours borné à `limit` éléments)"""
+    if is_vm_file(path):
+        return True
+    seen = 0
+    for _dirpath, _dirs, files in os.walk(path):
+        for f in files:
+            if is_vm_file(f):
+                return True
+        seen += len(files) + len(_dirs)
+        if seen > limit:
+            return False
+    return False
+
+
 def fmt_day(ts, default="date inconnue"):
     lt = safe_localtime(ts)
     return time.strftime("%d/%m/%Y", lt) if lt else default

@@ -94,6 +94,23 @@ supervision, **droits d'accès et matrice AGDLP**, **architecture et chemins tro
 |---|---|
 | ![](docs/reorganisation.png) | ![](docs/reparedocs.png) |
 
+### Virtualisation (Hyper-V) et cohérence de l'archivage
+Installé **sur l'hôte Hyper-V** (Windows Server 2019 / 2022 / 2025, rôle Hyper-V), VigieFS inventorie les
+machines virtuelles toutes les 6 heures (menu *Virtualisation*) :
+
+| Domaine | Ce que fait VigieFS |
+|---|---|
+| **Inventaire** | Chaque VM (état, génération, mémoire, adresses IP et nom DNS via les services d'intégration, réplication), ses disques virtuels avec la **chaîne de différenciation** (fichiers `.avhdx` des points de contrôle), taille occupée sur l'hôte et taille maximale, dernière écriture. Volumes de l'hôte : espace libre, fichiers des VM, croissance encore possible des disques dynamiques. **Disques orphelins** (`.vhdx` rattachés à aucune VM). Historique pour la croissance sur 7 jours. |
+| **Constats** | Point de contrôle oublié (la chaîne grossit et ralentit la VM), disque dynamique presque plein, disque fragmenté, **VM inactive** depuis longtemps, services d'intégration absents, **VM avec des données non supervisées**, **espace récupérable** par compactage, volume de l'hôte presque plein, **sur-allocation** (les disques dynamiques peuvent dépasser l'espace libre), archive placée sur le volume des VM, disques orphelins. Alertes (catégorie *Virtualisation*) levées et résolues automatiquement. |
+| **Quelles VM portent la donnée** | Découverte des **partages de chaque VM** (CIM / WinRM, sinon `net view`) avec leur taille, partages système exclus : un clic sur *Superviser* ajoute le partage (chemin UNC) aux dossiers supervisés, rattaché à la VM. Les liens sont aussi réglables à la main. Les VM sans partage restent visibles. |
+| **Analyse hors ligne** | Pour une VM **arrêtée** (ex. vieux serveur ERP) : montage du disque **en lecture seule**, sans lettre de lecteur, analyse du contenu (volume, données froides, types), démontage garanti. Rien n'est écrit dans le disque. |
+| **Compactage** | Après un archivage ou un nettoyage dans une VM, l'espace n'est rendu à l'hôte qu'au compactage du disque dynamique : *Compacter* (VM arrêtée uniquement, confirmation, `Optimize-VHD -Mode Full`), gain mesuré. |
+| **Cohérence** | Les dossiers des VM deviennent des **racines protégées** : aucun fichier de machine virtuelle (`.vhdx`, `.avhdx`, `.vmcx`, `.vmrs`, `.vmgs`, `.vhds`, `.vmdk`…) n'est jamais archivé, nettoyé, dédoublonné, renommé, déplacé ni supprimé, ni par une tâche planifiée ni depuis l'interface ; la réorganisation verrouille les dossiers qui en contiennent. L'archivage se fait **dans** la VM (sur ses partages supervisés), et l'espace libéré est récupéré sur l'hôte par compactage. **Doublons entre les VM** : une recherche portant sur tous les partages des VM. |
+
+| Virtualisation (Hyper-V) |
+|---|
+| ![](docs/virtualisation.png) |
+
 ### Quotas stricts, partages, santé, données sensibles
 | Domaine | Ce que fait VigieFS |
 |---|---|
@@ -348,6 +365,8 @@ vigiefs/
 │   ├── response.py     Réponses : fermer les sessions, bloquer l'accès, désactiver le compte
 │   ├── auditsetup.py   Préparation de l'audit (auditpol, journal, SACL ; Samba full_audit)
 │   ├── api_security.py API sécurité et utilisateurs
+│   ├── hyperv.py       Hyper-V : inventaire, constats, découverte des partages des VM, analyse hors ligne, compactage
+│   ├── api_hyperv.py   API virtualisation
 │   ├── api.py          API REST FastAPI + service de l'interface
 │   ├── api_rights.py   API droits, matrice, architecture, quotas, SMB, santé, RGPD
 │   ├── api_service.py  API service : sondes, état, disponibilité, arrêt, maintenance
@@ -415,6 +434,14 @@ ressource n'est chargée depuis Internet.
   Python sans écrasement qui conserve dates et propriétaire mais pas les ACL étendues (les dossiers cibles
   héritent des ACL par défaut). Les liens internes des documents (Excel, raccourcis) pointant vers les
   anciens chemins ne sont pas réécrits : prévenez les utilisateurs.
+- Virtualisation : l'inventaire, les constats, les liens VM ↔ partages et les protections sont testés sur un
+  inventaire simulé ; les commandes Hyper-V (`Get-VM`, `Get-VHD`, `Mount-VHD`, `Optimize-VHD`) et la découverte
+  des partages (CIM / WinRM, `net view`) sont écrites d'après la documentation Microsoft : **validez-les sur un
+  hôte de recette**. VigieFS doit tourner sur l'hôte avec un compte administrateur (service) ; la découverte
+  des partages demande WinRM ouvert vers les VM (sinon `net view`, sans tailles) et un compte autorisé sur
+  elles. Un disque cloné d'un autre (même signature) peut refuser le montage en lecture seule : l'analyse hors
+  ligne échoue alors proprement. Seuls Hyper-V et ses formats sont inventoriés ; les fichiers VMware
+  (`.vmdk`, `.vmx`…) sont seulement protégés.
 - La détection de données sensibles est **heuristique** (motifs + clés de contrôle) : elle aide
   à prioriser, sans valeur de certification RGPD.
 - Le superviseur ne survit pas à l'arrêt du serveur lui-même : c'est le service système qui

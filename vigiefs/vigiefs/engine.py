@@ -23,6 +23,7 @@ from .rules import (days_until_full, growth_per_day, quota_state, ransomware_mat
 from .scanner import ScanCancelled, quarantine_file, scan_tree
 from .activity import SecurityService
 from .userstorage import OwnerCollector, after_scan
+from .hyperv import HyperVService
 
 log = logging.getLogger("vigiefs.engine")
 
@@ -46,7 +47,7 @@ class Engine:
         self.data_dir = data_dir or os.path.dirname(os.path.abspath(db.path))
         self.jobs = JobManager(db)
         self.recycle = RecycleBin(db, self.data_dir)
-        self.archive = ArchiveService(db, self.recycle)
+        self.archive = ArchiveService(db, self.recycle, lambda: self.protected_roots())
         self.rights = RightsService(db, alerts, self.data_dir)
         self.quotas = QuotaService(db, alerts, self.rights)
         self._last_quota_check = 0
@@ -65,6 +66,7 @@ class Engine:
         self.probes = ThreadPoolExecutor(max_workers=4, thread_name_prefix="vigiefs-sonde")
         self._pending_probes = {}
         self.security = SecurityService(self)
+        self.hyperv = HyperVService(self)
         self.guard = Guard(self, self.data_dir)
 
     # --- cycle de vie ---
@@ -152,6 +154,9 @@ class Engine:
                     and (share.get("last_acl_at") or 0) + every_h * 3600 <= now:
                 self.db.execute("UPDATE shares SET last_acl_at=? WHERE id=?", (now, share["id"]))
                 self.start_acl_scan(share, "planificateur")
+        if self.hyperv.due(now):
+            self.hyperv.running = True          # pas de second lancement avant le début du premier
+            self.jobs.submit("hyperv_refresh", lambda ctx: self.hyperv.refresh(ctx=ctx), "planificateur")
         qcfg = merged_setting(self.db, "quotas")
         if now - self._last_quota_check >= int(qcfg.get("check_interval_min", 15)) * 60:
             self._last_quota_check = now
@@ -454,6 +459,12 @@ class Engine:
 
     def skip_roots(self):
         return [self.recycle.root(), self.archive.settings().get("root")]
+
+    def protected_roots(self):
+        """Dossiers de stockage des machines virtuelles (dernier inventaire Hyper-V) : jamais archivés, nettoyés,
+        dédoublonnés ni réorganisés. Ils restent comptés dans les analyses de volume."""
+        roots = self.db.get_setting("vm_protected_paths", []) or []
+        return [r for r in roots if r]
 
     def start_archive(self, share, policy, actor):
         self.db.execute("UPDATE shares SET last_archive_at=? WHERE id=?", (time.time(), share["id"]))

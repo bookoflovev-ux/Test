@@ -28,6 +28,9 @@ JOB_LABELS = {
     "restructure_execute": "Réorganisation : déplacement vérifié",
     "restructure_rollback": "Réorganisation : retour arrière",
     "security_import": "Analyse d'un journal importé",
+    "hyperv_refresh": "Inventaire Hyper-V",
+    "hyperv_scan": "Analyse du contenu d'une VM éteinte",
+    "hyperv_compact": "Compactage des disques d'une VM",
 }
 
 

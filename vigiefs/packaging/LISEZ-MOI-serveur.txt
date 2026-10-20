@@ -73,6 +73,15 @@ SÉCURITÉ ET UTILISATEURS (qui fait quoi)
   attaques de mots de passe, journal effacé…), score de risque, réactions (fermer les sessions,
   bloquer l'accès, désactiver le compte).
 
+VIRTUALISATION (HÔTE HYPER-V)
+- Installé sur l'hôte Hyper-V, VigieFS inventorie les VM toutes les 6 h (menu Virtualisation) :
+  disques virtuels, points de contrôle oubliés, VM inactives, disques orphelins, volumes de l'hôte.
+- Bouton « Découvrir » : partages de chaque VM (WinRM ouvert vers la VM, sinon net view) ;
+  « Superviser » ajoute le partage aux dossiers supervisés. VM arrêtée : analyse de son disque en
+  lecture seule, puis compactage après archivage pour rendre l'espace à l'hôte.
+- Les fichiers des VM (.vhdx, .avhdx, .vmcx, .vmrs…) ne sont jamais archivés, nettoyés,
+  dédoublonnés, déplacés ni supprimés : l'archivage se fait dans les VM, par leurs partages.
+
 {reparedocs}
 Documentation complète : README.md. Licences : runtime\LICENSE.txt (Python),
 tools\WinSW-LICENSE.txt (WinSW, MIT).

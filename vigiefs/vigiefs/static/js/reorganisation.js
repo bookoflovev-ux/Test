@@ -90,6 +90,7 @@ async function viewRestructure(view, query, id) {
       <div class="banner info" style="margin-bottom:16px">${icon('shield')}<div><b>Aucun fichier ne peut être perdu.</b> L'étape 1 crée seulement les dossiers cibles. L'étape 2 copie chaque fichier
         avec robocopy sans jamais écraser (/XC /XN /XO), vérifie la copie (taille, date${d.options.verify_hash ? ', empreinte SHA-256' : ''}) et ne supprime que les sources vérifiées ;
         le reste demeure en place et est listé. Cliché instantané, sauvegarde des droits, inventaire avant/après et retour arrière exact (manifeste).</div></div>
+      ${d.protected && (d.protected.dirs || d.protected.files) ? `<div class="banner info" style="margin-bottom:16px">${icon('disk')}<span>Machines virtuelles : ${fmtNum(d.protected.dirs)} dossier(s) et ${fmtNum(d.protected.files)} fichier(s) laissés en place (disques virtuels, configurations) : les déplacer casserait les VM.</span></div>` : ''}
       <div id="rs-job"></div>
       <div class="tiles">
         ${tile({ label: 'Opérations retenues', value: `${fmtNum(p.selected)} / ${fmtNum(p.ops)}`, ic: 'tasks', hero: true, sub: `${fmtNum(d.ops.filter(o => o.selected).reduce((a, o) => a + (o.files || 0), 0))} fichier(s) concernés` })}

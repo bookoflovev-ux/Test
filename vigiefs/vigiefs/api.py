@@ -25,7 +25,7 @@ from .config import DEFAULT_SETTINGS, merged_setting
 from .db import Database
 from .engine import Engine
 from .permissions import read_permissions
-from .rules import normalize_extensions, quota_state, safe_join
+from .rules import contains_vm_files, normalize_extensions, quota_state, safe_join
 from . import docrepair
 from .integrity import STATUS_LABEL, integrity_scan, repair_in_share, repair_upload
 from .jobs import JOB_LABELS
@@ -598,6 +598,14 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
         db.audit(user["username"], "téléchargement", target)
         return FileResponse(target, filename=os.path.basename(target))
 
+    def vm_guard(target):
+        """Un disque ou un dossier de machine virtuelle ne se renomme ni ne se supprime depuis VigieFS."""
+        inside = any(r and (os.path.normcase(target) + os.sep).startswith(os.path.normcase(r.rstrip("\\/")) + os.sep)
+                     for r in engine.protected_roots())
+        if inside or contains_vm_files(target):
+            raise HTTPException(409, "Cet élément contient des fichiers de machine virtuelle (disque virtuel, "
+                                     "configuration) : le renommer ou le supprimer casserait la VM. Passez par Hyper-V.")
+
     @app.post("/api/shares/{share_id}/mkdir")
     def mkdir(share_id: int, body: MkdirIn, user=Depends(operator)):
         share = get_share_or_404(share_id)
@@ -618,6 +626,7 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
         dest = os.path.join(os.path.dirname(src), _valid_name(body.new_name))
         if os.path.exists(dest):
             raise HTTPException(409, "Un élément porte déjà ce nom")
+        vm_guard(src)
         os.rename(src, dest)
         db.audit(user["username"], "renommage", src, dest)
         return {"ok": True}
@@ -630,6 +639,7 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
             raise HTTPException(400, "Impossible de supprimer la racine du dossier supervisé")
         if not os.path.lexists(target):
             raise HTTPException(404, "Élément introuvable")
+        vm_guard(target)
         item_id = recycle.discard(share, body.path, "suppression manuelle", user["username"])
         db.audit(user["username"], "suppression (corbeille)", target)
         return {"ok": True, "recycle_id": item_id}
@@ -901,14 +911,17 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
 
     @app.get("/api/jobs")
     def list_jobs(share_id: Optional[int] = None, client_id: Optional[int] = None, type: Optional[str] = None,
-                  status: Optional[str] = None, no_share: bool = False, limit: int = Query(100, le=500),
-                  user=Depends(viewer)):
+                  status: Optional[str] = None, no_share: bool = False, scope: Optional[str] = None,
+                  limit: int = Query(100, le=500), user=Depends(viewer)):
         sql = ("SELECT j.id, j.type, j.title, j.share_id, j.client_id, j.status, j.params, j.progress, j.error, "
                "j.actor, j.created_at, j.started_at, j.finished_at, s.name AS share_name, c.name AS client_name "
                "FROM jobs j LEFT JOIN shares s ON s.id=j.share_id LEFT JOIN clients c ON c.id=j.client_id WHERE 1=1")
         params = []
         if no_share:
             sql += " AND j.share_id IS NULL"
+        if scope:                       # recherches transverses (ex. doublons entre les VM d'un hôte Hyper-V)
+            sql += " AND j.params LIKE ?"
+            params.append(f'%"scope": {json.dumps(scope)}%')
         for col, val in (("j.share_id", share_id), ("j.client_id", client_id), ("j.type", type)):
             if val:
                 sql += f" AND {col}=?"
@@ -999,14 +1012,14 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
         if not cats:
             raise HTTPException(400, "Aucune catégorie sélectionnée")
         actor = user["username"]
-        jid = jobs.submit("cleanup", lambda ctx: run_cleanup(share, cats, recycle, actor, ctx, db), actor,
+        jid = jobs.submit("cleanup", lambda ctx: run_cleanup(share, cats, recycle, actor, ctx, db, engine.protected_roots()), actor,
                           share=share, params={"categories": cats})
         return {"job_id": jid}
 
     def _start_duplicates(shares, actor, min_size_mb, client_id=None, title=None):
         min_size = int(min_size_mb * 1024 * 1024)
         share = shares[0] if len(shares) == 1 else None
-        return jobs.submit("duplicates", lambda ctx: find_duplicates(shares, min_size, ctx, engine.skip_roots()),
+        return jobs.submit("duplicates", lambda ctx: find_duplicates(shares, min_size, ctx, engine.skip_roots() + engine.protected_roots()),
                            actor, share=share, client_id=client_id, title=title,
                            params={"min_size_mb": min_size_mb, "share_ids": [s["id"] for s in shares]})
 
@@ -1342,6 +1355,8 @@ def create_app(data_dir=None, start_engine=True, engine_factory=None):
     register_restructure(app, common)
     from .api_security import register as register_security
     register_security(app, common)
+    from .api_hyperv import register as register_hyperv
+    register_hyperv(app, common)
 
     # ------------------------------------------------------------ interface web
     @app.exception_handler(OSError)

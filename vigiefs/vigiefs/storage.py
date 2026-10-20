@@ -10,7 +10,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from .config import merged_setting
-from .rules import long_path, normalize_extensions, relpath, safe_join, strip_long
+from .rules import is_vm_file, long_path, normalize_extensions, relpath, safe_join, strip_long
 
 STUB_SUFFIX = " [archivé].url"
 
@@ -161,7 +161,7 @@ def _excluded(rel, name, patterns):
     return False
 
 
-def iter_archive_candidates(share, policy, ctx=None, skip_roots=()):
+def iter_archive_candidates(share, policy, ctx=None, skip_roots=(), stats=None):
     root = os.path.realpath(share["path"])
     cutoff = time.time() - int(policy["age_days"]) * 86400
     min_size = int(policy["min_size_kb"]) * 1024
@@ -177,6 +177,10 @@ def iter_archive_candidates(share, policy, ctx=None, skip_roots=()):
         for name in filenames:
             if name.endswith(STUB_SUFFIX) or name.startswith("~$"):
                 continue
+            if is_vm_file(name):
+                if stats is not None:
+                    stats["vm_protected"] = stats.get("vm_protected", 0) + 1
+                continue                    # disque ou configuration de VM : l'archiver casserait la VM
             full = os.path.join(dirpath, name)
             try:
                 st = os.lstat(full)
@@ -200,15 +204,16 @@ def iter_archive_candidates(share, policy, ctx=None, skip_roots=()):
 
 
 class ArchiveService:
-    def __init__(self, db, recycle):
+    def __init__(self, db, recycle, protected=None):
         self.db = db
         self.recycle = recycle
+        self.protected = protected or (lambda: [])     # dossiers de stockage des VM (inventaire Hyper-V)
 
     def settings(self):
         return merged_setting(self.db, "archive")
 
     def _skip_roots(self):
-        return [self.settings().get("root"), self.recycle.root()]
+        return [self.settings().get("root"), self.recycle.root(), *self.protected()]
 
     def simulate(self, share, policy, ctx=None):
         count = size = 0
@@ -216,7 +221,8 @@ class ArchiveService:
         by_folder = defaultdict(lambda: [0, 0])
         samples = []
         oldest = None
-        for rel, sz, mtime, _ in iter_archive_candidates(share, policy, ctx, self._skip_roots()):
+        stats = {}
+        for rel, sz, mtime, _ in iter_archive_candidates(share, policy, ctx, self._skip_roots(), stats):
             count += 1
             size += sz
             ext = os.path.splitext(rel)[1].lower() or "(sans)"
@@ -239,6 +245,7 @@ class ArchiveService:
                     for k, v in sorted(d.items(), key=lambda kv: kv[1][1], reverse=True)[:15]]
 
         return {"count": count, "size": size, "oldest": oldest, "policy": policy,
+                "vm_protected": stats.get("vm_protected", 0),
                 "by_extension": top(by_ext), "by_folder": top(by_folder),
                 "samples": [{"path": p, "size": s, "mtime": m} for s, p, m in samples[:200]]}
 

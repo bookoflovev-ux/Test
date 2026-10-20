@@ -534,3 +534,6 @@ ol.stepper .step + .step::before { content: ""; width: 18px; height: 1.5px; back
 .finding .body { min-width: 0; flex: 1; }
 .audit-row td { vertical-align: top; }
 pre.snippet { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; overflow: auto; font-size: 12px; }
+
+/* Virtualisation */
+b.err, span.err, .cell-sub.err { color: var(--critical-ink); }
