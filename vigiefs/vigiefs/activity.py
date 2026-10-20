@@ -26,6 +26,7 @@ from collections import Counter, defaultdict
 
 from . import smb, system
 from .config import merged_setting
+from .rules import plausible_mtime
 
 log = logging.getLogger("vigiefs.activity")
 
@@ -506,6 +507,8 @@ class ActivityStore:
                 if not user or excluded(user):
                     continue
                 ts = float(e.get("ts") or time.time())
+                if not plausible_mtime(ts):
+                    continue                # date absurde (enregistrement abîmé) : hors de toute analyse
                 client = (str(e.get("client")).strip() or None) if e.get("client") else None
                 if client in ("-", "::1", "127.0.0.1"):
                     client = None

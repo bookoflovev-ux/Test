@@ -33,7 +33,7 @@ import unicodedata
 from collections import Counter, defaultdict
 
 from . import pathcheck, system
-from .rules import long_path, strip_long
+from .rules import fmt_day, long_path, plausible_mtime, safe_localtime, strip_long
 
 RULES = {
     "naming": ("Noms non conformes", True),
@@ -182,9 +182,12 @@ def walk(root, skip_roots=(), cancel=None, keep_files_over=2000):
             else:
                 node["files"] += 1
                 node["size"] += st.st_size
-                node["newest"] = max(node["newest"], st.st_mtime)
+                good = plausible_mtime(st.st_mtime, now)
+                if good:                    # une date fausse (1601, 1965, 2107…) ne rend pas un dossier « récent »
+                    node["newest"] = max(node["newest"], st.st_mtime)
                 node["hist"][len(e.name)] += 1
-                node["years"][time.localtime(st.st_mtime).tm_year] += 1
+                lt = safe_localtime(st.st_mtime) if good else None
+                node["years"][lt.tm_year if lt else 0] += 1
                 node["file_list"].append((e.name, st.st_size, st.st_mtime))
             if issues and not (e.name.lower() in IGNORED_FILES or e.name.startswith("~$")):
                 node["issues"].append((e.name, is_dir, issues))
@@ -333,11 +336,14 @@ def propose(share, settings, path_rules, skip_roots=(), cancel=None, now=None):
             continue
         by_year = defaultdict(list)
         for name, size, mt in n["file_list"]:
-            by_year[time.localtime(mt).tm_year].append((name, size))
+            lt = safe_localtime(mt) if plausible_mtime(mt, now) else None
+            by_year[lt.tm_year if lt else 0].append((name, size))
         for year, items in sorted(by_year.items()):
-            add("crowded", "move_files", rel, dest_sub=str(year), files_list=sorted(x[0] for x in items),
+            label = str(year) if year else "Date inconnue"
+            add("crowded", "move_files", rel, dest_sub=label, files_list=sorted(x[0] for x in items),
                 files=len(items), size=sum(x[1] for x in items),
-                reason=f"{n['files']} fichiers directement dans ce dossier : rangement des fichiers de {year}")
+                reason=f"{n['files']} fichiers directement dans ce dossier : rangement des fichiers "
+                       + (f"de {year}" if year else "à la date de modification invalide"))
 
     # Fichiers à la racine.
     root = dirs.get("", {})
@@ -362,7 +368,7 @@ def propose(share, settings, path_rules, skip_roots=(), cancel=None, now=None):
         if n["t_newest"] < limit:
             cold_roots.append(rel)
             add("cold", "move_dir", rel, dest="{archive}/{parent}", files=n["t_files"], size=n["t_size"],
-                reason="aucune modification depuis le " + time.strftime("%d/%m/%Y", time.localtime(n["t_newest"])))
+                reason="aucune modification depuis le " + fmt_day(n["t_newest"]))
 
     # Modèle de premier niveau : le dossier qui porte déjà le nom de la catégorie devient la catégorie,
     # les autres y sont rangés.

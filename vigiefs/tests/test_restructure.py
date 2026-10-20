@@ -244,3 +244,28 @@ def test_monitor_quiet_suppresses_burst(env):
     engine.monitor.quiet.discard(sid)
     engine.monitor.process_batch(batch)
     assert db.query_one("SELECT id FROM alerts WHERE fingerprint=?", (f"burst:{sid}",))
+
+
+def test_proposal_survives_absurd_file_dates(tmp_path, monkeypatch):
+    """Sous Windows, time.localtime() lève « [Errno 22] Invalid argument » pour une date avant 1970 ou après
+    l'an 3000 : un seul fichier mal daté faisait échouer toute la proposition."""
+    real = time.localtime
+
+    def windows_localtime(ts=None):
+        if ts is not None and (ts < 0 or ts > 32536799999):
+            raise OSError(22, "Invalid argument")
+        return real() if ts is None else real(ts)
+    monkeypatch.setattr(time, "localtime", windows_localtime)
+    root = str(tmp_path / "p")
+    write(root, "Compta/ok.pdf", age_days=10)
+    for i, ts in enumerate((-157766400, -11644473600, 40000000000, 0)):     # 1965, 1601, an 3237, 1970
+        write(root, f"Compta/mal daté {i}.pdf")
+        os.utime(os.path.join(root, "Compta", f"mal daté {i}.pdf"), (ts, ts))
+    write(root, "Vieux/seul.doc")
+    os.utime(os.path.join(root, "Vieux", "seul.doc"), (-157766400, -157766400))
+    plan, dirs = rs.propose({"id": 1, "name": "T", "path": root}, {"cold_years": 3}, {"crowded_items": 3})
+    crowded = [o for o in plan["ops"] if o["rule"] == "crowded"]
+    recent = str(real(time.time() - 10 * 86400).tm_year)
+    assert {o["dest_sub"]: o["files"] for o in crowded} == {"Date inconnue": 4, recent: 1}
+    # Une date manifestement fausse ne rend pas un dossier « froid » (rien n'est archivé sur sa foi).
+    assert not any(o["rule"] == "cold" and o["src"] == "Vieux" for o in plan["ops"])

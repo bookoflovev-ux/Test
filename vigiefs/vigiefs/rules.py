@@ -2,6 +2,28 @@
 
 import fnmatch
 import os
+import time
+
+DOS_EPOCH = 315532800          # 01/01/1980 : en deçà, une date de fichier est manifestement fausse
+
+
+def safe_localtime(ts):
+    """time.localtime() sans exception : None pour une date hors plage (sous Windows, toute date antérieure à
+    1970 ou postérieure à l'an 3000 lève « [Errno 22] Invalid argument », fréquent après une copie ratée)."""
+    try:
+        return time.localtime(ts)
+    except (OSError, OverflowError, ValueError, TypeError):
+        return None
+
+
+def plausible_mtime(ts, now=None):
+    """Date de fichier vraisemblable (entre 1980 et demain) : les autres ne servent à aucune décision."""
+    return ts is not None and DOS_EPOCH <= ts <= (now or time.time()) + 2 * 86400
+
+
+def fmt_day(ts, default="date inconnue"):
+    lt = safe_localtime(ts)
+    return time.strftime("%d/%m/%Y", lt) if lt else default
 
 
 def normalize_extensions(raw):
