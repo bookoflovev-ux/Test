@@ -10,23 +10,28 @@ son téléphone** (installable sur l'écran d'accueil) ou depuis n'importe où v
 
 ## ▶️ Installation (Windows 10 / 11)
 
-1. Téléchargez ce dossier `overdrive/` sur le PC.
-2. Double-cliquez sur **`start.bat`** et acceptez la demande **administrateur**.
-   - Au premier lancement : Python est installé via `winget` si besoin, puis les dépendances.
-   - L'interface s'ouvre dans une fenêtre d'application : `http://127.0.0.1:8765`.
-3. *(Recommandé)* Cliquez sur **Point de restauration** avant d'appliquer des optimisations.
+1. Décompressez le dossier **Overdrive** où vous voulez le garder (ex. `Documents\Overdrive`).
+2. Double-cliquez sur **`Installer Overdrive.bat`** et acceptez la demande administrateur.
+   Une fenêtre d'installation s'affiche **une seule fois** (1 à 3 minutes). Elle installe Python si besoin,
+   les composants, le démarrage caché et l'**icône Overdrive sur le bureau** et dans le menu Démarrer.
+3. Ensuite, utilisez simplement l'**icône du bureau** : plus aucune fenêtre noire. Overdrive tourne en arrière-plan,
+   avec une icône près de l'horloge (clic droit : Ouvrir, Optimisation express, Game Boost, Quitter).
+4. Au premier lancement, Overdrive **analyse le PC** et propose les optimisations adaptées à son matériel
+   (page **Analyse du PC**, bouton « Optimiser ce PC automatiquement »).
 
-Options :
-- **`install_autostart.bat`** : lance Overdrive automatiquement à chaque ouverture de session (en tâche de fond).
-- **`build_exe.bat`** : génère un exécutable autonome `dist\Overdrive\Overdrive.exe` (PyInstaller).
-- **Températures CPU/GPU** : lancez [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases)
-  avec *Options → Remote Web Server → Run* (port 8085) ; Overdrive les récupère automatiquement.
-  Sans lui, la température GPU NVIDIA reste disponible.
+- Démarrage avec Windows : activé par défaut, désactivable dans *Paramètres → Application*.
+- Pour désinstaller : **`Desinstaller Overdrive.bat`** (propose de remettre les réglages Windows d'origine).
+- Dépannage : `outils\console-depannage.bat` lance Overdrive avec une console visible, et le journal se trouve
+  dans `data\overdrive.log`. `outils\build_exe.bat` génère un `.exe` autonome.
+- Températures CPU : lancez [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases)
+  avec *Options → Remote Web Server → Run* (port 8085).
 
 ## 🧭 Modules
 
 | Module | Ce qu'il fait |
 |---|---|
+| **Analyse du PC** | Inventaire matériel (CPU, RAM et nombre de barrettes, GPU dédié/intégré, SSD/HDD, écran, portable/fixe, HVCI) → niveau du PC et diagnostic : écran bridé à 60 Hz, RAM simple canal, XMP désactivé, disque plein, pilote GPU ancien, Windows 10 avec CPU hybride… **Optimisation automatique adaptée** (ex. : services gardés sur disque dur, allègement sur PC modeste, fréquence d'écran maximale) avec point de restauration |
+| **Contrôle ASUS** | Pour les TUF / ROG / Vivobook, via le pilote ASUS (comme Armoury Crate / G-Helper) : modes Silencieux / Équilibré / **Turbo**, **Turbo automatique pendant les jeux** (sur secteur), **limite de charge de la batterie** (60/80/100 %), overdrive de l'écran, état MUX et GPU Éco, âge du BIOS. Autres marques : outil constructeur conseillé (Lenovo Vantage, MSI Center, OMEN Hub…) |
 | **Tableau de bord** | CPU (par cœur), RAM, GPU (NVIDIA via NVML, AMD/Intel via compteurs Windows), réseau, disques, températures, batterie, score de santé, actions rapides |
 | **Mode Jeu · CS2** | Détection Steam/CS2, **profil compétitif en 1 clic** (plan Performances ultimes, Mode Jeu, Game DVR off, priorité MMCSS, HAGS, souris 1:1, CS2 en priorité haute permanente + forcé sur le GPU NVIDIA), **Game Boost** (ferme les applis inutiles, purge la RAM), éditeur `autoexec.cfg`, options de lancement, réglages vidéo, conseils TUF (Turbo, MUX/Ultimate, dual channel) |
 | **Mes jeux** | Détection des jeux installés (Steam, Epic, GOG, Ubisoft, Riot, Battle.net, EA, Xbox + catalogue de ~35 jeux populaires), suivi du temps de jeu, **profil par jeu** (Compétitif / Équilibré / Qualité / Désactivé) appliqué automatiquement au lancement — priorité, GPU dédié, purge RAM, applis fermées, plan d'alimentation — puis restauré à la fermeture. Conseils de réglages par jeu. |
@@ -91,9 +96,13 @@ des actions rapides. Le texte à donner à la session Claude Code du cockpit est
 
 ```
 overdrive/
-├── run.py              serveur (FastAPI + uvicorn), port 8765
-├── start.bat           lancement admin + installation auto
+├── Installer Overdrive.bat / Desinstaller Overdrive.bat
+├── run.py              serveur (FastAPI + uvicorn), port 8765 : --open / --background
+├── outils/             installeur PowerShell, console de dépannage, build .exe
+├── assets/             icônes (.ico / .png)
 ├── app/
+│   ├── advisor.py      analyse du PC + optimisation adaptée
+│   ├── asus.py         contrôle ASUS (ATKACPI)   ├── desktop.py  bureau, zone de notification
 │   ├── monitor.py      échantillonnage temps réel + historique
 │   ├── gpu.py          NVML / nvidia-smi / compteurs Windows
 │   ├── tweaks.py       moteur d'optimisations réversibles

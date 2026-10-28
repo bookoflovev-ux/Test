@@ -149,7 +149,7 @@ def apply_cs2_profile():
     if not IS_WINDOWS:
         raise NotSupported("Profil disponible uniquement sous Windows.")
     if not is_admin():
-        raise PermissionError("Droits administrateur requis : relancez Overdrive via start.bat.")
+        raise PermissionError("Droits administrateur requis : relancez Overdrive avec l'icône du bureau (ou « Installer Overdrive.bat »).")
     done = []
     for tid in ("power_plan", "game_mode", "game_dvr_off", "games_priority", "network_throttling", "mouse_accel_off", "hags"):
         try:

@@ -1,7 +1,7 @@
 # Brancher Overdrive sur le cockpit « Nexus » (dashboard-societe.html)
 
 À copier-coller tel quel dans la session Claude Code du cockpit (« Dashboard gestion SASU »),
-**sur le PC**, une fois Overdrive décompressé et lancé (`start.bat`).
+**sur le PC**, une fois Overdrive installé (`Installer Overdrive.bat`).
 
 ---
 

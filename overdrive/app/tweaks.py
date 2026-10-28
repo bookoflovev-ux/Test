@@ -269,7 +269,7 @@ def apply(tweak_id):
     t = BY_ID[tweak_id]
     needs_hklm = t.get("special") or any(op["hive"] == "HKLM" for op in t.get("ops", []))
     if needs_hklm and not is_admin():
-        raise PermissionError("Droits administrateur requis : relancez Overdrive via start.bat.")
+        raise PermissionError("Droits administrateur requis : relancez Overdrive avec l'icône du bureau (ou « Installer Overdrive.bat »).")
     if t.get("special") == "power_plan":
         store_backup("tweak:power_plan", {"kind": "power_plan", "previous": active_power_plan()["guid"] or BALANCED_PLAN,
                                           "label": t["name"]})

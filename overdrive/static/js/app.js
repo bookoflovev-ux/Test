@@ -86,6 +86,7 @@ async function api(path, { method = 'GET', body } = {}) {
   return data;
 }
 const post = (p, body = {}) => api(p, { method: 'POST', body });
+const safeApi = (p) => api(p).catch(() => null);
 
 async function runJob(jobId, onUpdate) {
   for (;;) {
@@ -241,6 +242,7 @@ const every = (ms, fn) => pageTimers.push(setInterval(fn, ms));
 // ---------- Pages ----------
 const PAGES = [
   { id: 'dashboard', title: 'Tableau de bord', sub: 'Vue d\'ensemble de votre PC en temps réel', ico: 'dashboard', section: 'Pilotage' },
+  { id: 'pc', title: 'Analyse du PC', sub: 'Diagnostic matériel et optimisation adaptée à ce PC', ico: 'search' },
   { id: 'gaming', title: 'Mode Jeu · CS2', sub: 'Profil compétitif, Game Boost et configuration Counter-Strike 2', ico: 'game' },
   { id: 'games', title: 'Mes jeux', sub: 'Jeux détectés et performances adaptées automatiquement à chaque jeu', ico: 'play' },
   { id: 'tweaks', title: 'Optimisations', sub: 'Réglages Windows pour les performances — tous réversibles', ico: 'zap' },
@@ -278,7 +280,12 @@ async function route() {
 // ===== Tableau de bord =====
 R.dashboard = async (v) => {
   const st = INFO.static || {};
-  v.innerHTML = `${winOnly()}<div class="grid g4" style="margin-top:${INFO.windows ? 0 : 16}px">
+  const adv = await safeApi('/api/advisor?light=1');
+  const a = adv?.analysis;
+  const banner = !a ? `<div class="card glow mb row between"><div class="row">${icon('search')}<div><b>Première utilisation</b><div class="small muted">Overdrive analyse ce PC pour proposer les optimisations adaptées à son matériel.</div></div></div><a class="btn btn-primary" href="#/pc">Analyser ce PC</a></div>`
+    : a.auto_count ? `<div class="card glow mb row between"><div class="row">${icon('zap')}<div><b>${esc(a.tier)} · ${a.auto_count} optimisation(s) adaptée(s) à ce PC disponible(s)</b>
+      <div class="small muted">${a.critical ? `${a.critical} point(s) critique(s) détecté(s) · ` : ''}analyse du ${fmtDate(a.ts)}</div></div></div><a class="btn btn-primary" href="#/pc">Optimiser ce PC</a></div>` : '';
+  v.innerHTML = `${winOnly()}${banner}<div class="grid g4" style="margin-top:${INFO.windows ? 0 : 16}px">
     <div class="card glow span2"><div class="health"><div class="health-ring" id="healthRing">
       <svg viewBox="0 0 132 132"><defs><linearGradient id="hg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
       <circle cx="66" cy="66" r="56" fill="none" stroke="var(--surface-3)" stroke-width="11"/>
@@ -397,6 +404,105 @@ async function quickAction(q, btn) {
       return r;
     }, 'Optimisation express terminée'));
   }
+}
+
+// ===== Analyse du PC =====
+const SEV = { critique: ['Critique', 'bad'], important: ['Important', 'warn'], conseil: ['Conseil', 'acc'] };
+
+R.pc = async (v) => {
+  const d = await api('/api/advisor');
+  const a = d.analysis;
+  if (!a) {
+    v.innerHTML = `${winOnly()}<div class="hero" style="margin-top:${INFO.windows ? 0 : 16}px"><h2>Analyse de ce PC</h2>
+      <p>Overdrive inventorie le matériel (processeur, mémoire, carte graphique, disques, écran, portable ou fixe) et en déduit les optimisations adaptées.</p>
+      <button class="btn btn-primary btn-lg" id="aScan">${icon('search')}Lancer l'analyse</button><div id="aProg" class="mt"></div></div>${asusCard(d)}`;
+    $('#aScan').onclick = (e) => safe(act(e.currentTarget, () => startJob('/api/advisor/scan', {}, $('#aProg'), 'Analyse…'), 'Analyse terminée').then(() => route()));
+    bindAsus(v, d);
+    return;
+  }
+  const hw = a.hardware;
+  const ram = hw.ram;
+  const dgpu = hw.gpus.filter((g) => !g.integrated);
+  const autos = a.findings.filter((f) => f.auto);
+  const sysDisk = hw.disks.find((x) => x.system);
+  v.innerHTML = `${winOnly()}<div class="stack" style="margin-top:${INFO.windows ? 0 : 16}px">
+    <div class="hero"><div class="hero-badge">PC</div>
+      <div class="row" style="gap:8px;margin-bottom:12px">${chip(a.tier, 'acc')}${chip(hw.laptop ? 'Portable' : 'PC fixe')}${hw.manufacturer ? chip(hw.manufacturer) : ''}
+        ${['critique', 'important', 'conseil'].map((sv) => { const n = a.findings.filter((f) => f.severity === sv).length; return n ? chip(`${n} ${SEV[sv][0].toLowerCase()}`, SEV[sv][1]) : ''; }).join('')}</div>
+      <h2>${esc(hw.model || 'Ce PC')}</h2>
+      <p>${autos.length ? `${autos.length} optimisation(s) adaptée(s) à ce matériel peuvent être appliquées automatiquement. Un point de restauration est créé avant, et tout reste annulable.` : 'Ce PC est déjà optimisé pour son matériel. Les conseils ci-dessous concernent le matériel lui-même.'}</p>
+      <div class="row">${autos.length ? `<button class="btn btn-primary btn-lg" id="aOpt">${icon('zap')}Optimiser ce PC automatiquement</button>` : ''}
+        <button class="btn btn-lg" id="aScan">${icon('refresh')}Relancer l'analyse</button><span class="small muted">Analyse du ${fmtDate(a.ts)}</span></div>
+      <div id="aProg" class="mt"></div></div>
+
+    <div class="grid g3">
+      ${card('Processeur', `<div class="strong">${esc(hw.cpu.name || '—')}</div><div class="kv mt"><span>Cœurs / threads</span><span>${hw.cpu.cores ?? '—'} / ${hw.cpu.threads ?? '—'}</span></div>
+        ${hw.cpu.max_mhz ? `<div class="kv"><span>Fréquence de base</span><span>${(hw.cpu.max_mhz / 1000).toFixed(2)} GHz</span></div>` : ''}`, { ico: 'cpu' })}
+      ${card('Mémoire vive', `<div class="strong">${fmtBytes(ram.total, 0)}</div>
+        ${ram.sticks ? `<div class="kv mt"><span>Barrettes</span><span>${ram.sticks} / ${ram.slots || '?'} emplacement(s) · ${ram.sticks >= 2 ? 'double canal' : 'simple canal'}</span></div>` : ''}
+        ${ram.speed ? `<div class="kv"><span>Vitesse</span><span>${ram.configured || ram.speed} MHz${ram.configured && ram.configured < ram.speed - 100 ? ` (max ${ram.speed})` : ''}</span></div>` : ''}`, { ico: 'ram' })}
+      ${card('Carte(s) graphique(s)', hw.gpus.length ? hw.gpus.map((g) => `<div class="kv"><span class="ellipsis" style="max-width:62%" title="${esc(g.name)}">${esc(g.name)}</span><span>${g.integrated ? 'intégrée' : 'dédiée'}</span></div>
+        ${g.driver ? `<div class="tiny faint">Pilote ${esc(g.driver)}${g.driver_date ? ` · ${esc(g.driver_date)}` : ''}</div>` : ''}`).join('') : '<span class="muted">Non détectée</span>', { ico: 'gpu', sub: dgpu.length && hw.gpus.length > 1 ? 'Double GPU (portable hybride)' : '' })}
+      ${card('Stockage', hw.disks.length ? hw.disks.map((x) => `<div class="kv"><span class="ellipsis" style="max-width:60%" title="${esc(x.name)}">${esc(x.name)}${x.system ? ' · Windows' : ''}</span><span>${esc(x.type)} · ${fmtBytes(x.size, 0)}</span></div>`).join('') : '<span class="muted">—</span>', { ico: 'disk', sub: sysDisk ? `Windows sur ${sysDisk.type}` : '' })}
+      ${card('Écran', hw.display ? `<div class="strong">${hw.display.width} × ${hw.display.height}</div><div class="kv mt"><span>Fréquence</span><span style="${hw.display.current < hw.display.max ? 'color:var(--warn)' : ''}">${hw.display.current} Hz (max ${hw.display.max} Hz)</span></div>` : '<span class="muted">Informations indisponibles</span>', { ico: 'dashboard' })}
+      ${card('Système', `<div class="strong">${esc(hw.os || '—')}</div>${hw.build ? `<div class="kv mt"><span>Build</span><span>${hw.build}</span></div>` : ''}
+        <div class="kv"><span>Intégrité mémoire (HVCI)</span><span>${hw.hvci ? 'activée' : 'désactivée'}</span></div>`, { ico: 'settings' })}
+    </div>
+
+    ${card('Diagnostic', a.findings.length ? `<div class="list">${a.findings.map((f) => `<div class="item">
+      ${f.auto ? `<label class="check"><input type="checkbox" data-act="${esc(f.action)}" checked></label>` : `<span style="width:16px"></span>`}
+      <div class="item-body"><div class="item-title">${chip(SEV[f.severity][0], SEV[f.severity][1])} ${esc(f.title)} ${f.auto ? chip('automatique', 'ok') : ''}</div>
+      <div class="item-desc">${esc(f.detail)}</div></div>${f.page ? `<a class="btn btn-sm btn-ghost" href="#/${f.page}">Voir</a>` : ''}</div>`).join('')}</div>`
+      : empty('Aucun problème détecté', 'check'), { ico: 'search', sub: 'Les points cochés sont corrigés par « Optimiser ce PC automatiquement ».' })}
+    ${asusCard(d)}
+  </div>`;
+  $('#aScan').onclick = (e) => safe(act(e.currentTarget, () => startJob('/api/advisor/scan', {}, $('#aProg'), 'Analyse…'), 'Analyse terminée').then(() => route()));
+  if ($('#aOpt')) $('#aOpt').onclick = async (e) => {
+    const actions = $$('[data-act]:checked', v).map((i) => i.dataset.act);
+    if (!actions.length) return toast('Cochez au moins une optimisation', 'warn');
+    if (!await confirmBox('Optimiser ce PC ?', `${actions.length} optimisation(s) adaptée(s) à ce matériel vont être appliquées, après création d'un point de restauration.`, 'Optimiser')) return;
+    safe(act(e.currentTarget, async () => {
+      const r = await startJob('/api/advisor/optimize', { actions }, $('#aProg'), 'Optimisation…');
+      const labels = { restore_point: 'Point de restauration', tweaks_recommended: 'Réglages Windows', light_profile: 'Allègement', services_safe: 'Services', display_refresh: 'Fréquence de l\'écran', clean: 'Nettoyage', trim: 'TRIM SSD' };
+      modal(`<h3>Optimisation terminée</h3><div class="stack" style="gap:8px;margin-bottom:16px">${r.report.map((x) => `<div class="row" style="flex-wrap:nowrap">${chip(x.ok ? '✓' : '✗', x.ok ? 'ok' : 'bad')}<b>${esc(labels[x.action] || x.action)}</b><span class="small muted">${esc(x.detail || '')}</span></div>`).join('')}</div>
+        <p class="small">Certains réglages (HAGS, timer) prennent effet après un redémarrage.</p><div class="row" style="justify-content:flex-end"><button class="btn btn-primary" id="mOk">Fermer</button></div>`);
+      $('#mOk').onclick = () => { closeModal(); route(); };
+      return r;
+    }));
+  };
+  bindAsus(v, d);
+};
+
+function asusCard(d) {
+  const s = d.asus || {};
+  if (!s.is_asus) {
+    return d.oem ? card(`Outil constructeur : ${d.oem.tool}`, `<p class="muted" style="margin:0">${esc(d.oem.tip)}</p>`, { ico: 'rocket' }) : '';
+  }
+  const f = s.features || {};
+  const biosOld = s.bios?.Date && (Date.now() - new Date(s.bios.Date)) / 864e5 > 365;
+  const modes = [['silent', 'Silencieux', 'Bureautique, ventilateurs discrets'], ['balanced', 'Équilibré', 'Usage courant'], ['turbo', 'Turbo', 'Jeu sur secteur, puissance maximale']];
+  return card(`${s.series} · contrôle ASUS`, `${!s.available ? notice(`Contrôle direct indisponible : ${esc(s.error || 'pilote ASUS absent')}. Installez « ASUS System Control Interface » via MyASUS (Mises à jour système).`) : `
+    ${s.conflicts?.length ? notice(`${esc(s.conflicts.join(' et '))} est ouvert : il peut remplacer les réglages faits ici. Utilisez un seul outil pour les modes de performance.`) + '<div style="height:12px"></div>' : ''}
+    <div class="grid g2">
+      ${f.perf_mode ? `<div><div class="stat-label mb">Mode de performance</div><div class="seg">${modes.map(([id, l, t]) => `<button data-mode="${id}" class="${s.mode === id ? 'active' : ''}" title="${t}">${l}</button>`).join('')}</div>
+        <label class="check small mt"><input type="checkbox" id="turboGames" ${d.turbo_in_games !== false ? 'checked' : ''}> Passer en Turbo automatiquement pendant les jeux (sur secteur)</label></div>` : ''}
+      ${f.battery_limit ? `<div><div class="stat-label mb">Limite de charge de la batterie</div><div class="seg">${[60, 80, 100].map((n) => `<button data-batt="${n}" class="${s.battery_limit === n ? 'active' : ''}">${n} %</button>`).join('')}</div>
+        <div class="small muted mt">80 % recommandé si le portable reste souvent branché : la batterie dure des années de plus.</div></div>` : ''}
+    </div>
+    <div class="list mt">
+      ${f.panel_od ? `<div class="item"><div class="item-body"><div class="item-title">Overdrive de l'écran</div><div class="item-desc">Réduit les traînées d'image (ghosting) dans les jeux rapides.</div></div>${sw(s.panel_od, 'id="panelOd"')}</div>` : ''}
+      ${f.gpu_mux ? `<div class="item"><div class="item-body"><div class="item-title">MUX : ${esc(s.gpu_mux)}</div><div class="item-desc">${s.gpu_mux.startsWith('Ultimate') ? 'Écran relié directement au GPU NVIDIA : FPS et latence optimaux.' : 'Passez en « Ultimate » dans Armoury Crate / G-Helper pour +5 à 15 % de FPS (redémarrage requis).'}</div></div></div>` : ''}
+      ${f.gpu_eco ? `<div class="item"><div class="item-body"><div class="item-title">GPU NVIDIA : ${s.gpu_eco ? 'coupé (mode Éco)' : 'actif'}</div><div class="item-desc">${s.gpu_eco ? 'Réactivez-le (mode Standard) pour jouer.' : 'Le mode Éco coupe le GPU NVIDIA pour l\'autonomie en bureautique.'}</div></div></div>` : ''}
+    </div>`}
+    <div class="row mt small muted">BIOS ${esc(s.bios?.SMBIOSBIOSVersion || '—')}${s.bios?.Date ? ` du ${esc(s.bios.Date)}` : ''}${biosOld ? ` · <span style="color:var(--warn)">plus d'un an : vérifiez les mises à jour BIOS dans MyASUS</span>` : ''}
+      <a class="btn btn-sm btn-ghost" href="#/updates">Outils ASUS</a></div>`, { ico: 'rocket', sub: esc(s.model || ''), cls: 'glow' });
+}
+
+function bindAsus(v, d) {
+  $$('[data-mode]', v).forEach((b) => b.onclick = () => safe(act(null, () => post('/api/asus/mode', { mode: b.dataset.mode }), `Mode ${b.textContent} activé`).then(() => { $$('[data-mode]', v).forEach((x) => x.classList.toggle('active', x === b)); })));
+  $$('[data-batt]', v).forEach((b) => b.onclick = () => safe(act(null, () => post('/api/asus/battery', { limit: Number(b.dataset.batt) }), `Charge limitée à ${b.dataset.batt} %`).then(() => { $$('[data-batt]', v).forEach((x) => x.classList.toggle('active', x === b)); })));
+  if ($('#panelOd')) $('#panelOd').onchange = (e) => safe(act(null, () => post('/api/asus/panel-od', { enabled: e.target.checked }), 'Écran mis à jour'));
+  if ($('#turboGames')) $('#turboGames').onchange = (e) => safe(act(null, () => post('/api/asus/turbo-in-games', { enabled: e.target.checked }), 'Enregistré'));
 }
 
 // ===== Mode Jeu / CS2 =====
@@ -941,12 +1047,26 @@ R.settings = async (v) => {
       <div class="item"><div class="item-body"><div class="item-title">Sauvegarde automatique</div><div class="item-desc">Utilise les dossiers et la destination de la page Sauvegarde.</div></div>
         <input type="number" id="bkH" value="${s.backup_every_hours}" min="1" style="width:80px"><span class="small muted">h</span>${sw(s.auto_backup, 'id="autoBk"')}</div>
       </div><div class="row mt"><button class="btn btn-primary" id="schSave">${icon('save')}Enregistrer</button></div>`, { ico: 'refresh', sub: 'Overdrive s\'en occupe en arrière-plan' })}
-    ${card('À propos', `<div class="kv"><span>Version</span><span>${esc(INFO.version)}</span></div><div class="kv"><span>Droits administrateur</span><span>${INFO.admin ? 'oui' : 'non — lancez start.bat'}</span></div>
+    ${card('Application', `<div class="list">
+      <div class="item"><div class="item-body"><div class="item-title">Démarrer avec Windows</div><div class="item-desc">Overdrive se lance caché à l'ouverture de session (icône près de l'horloge), sans fenêtre ni demande d'autorisation.</div></div>${sw(false, 'id="autoStart" disabled')}</div>
+      <div class="item"><div class="item-body"><div class="item-title">Quitter Overdrive</div><div class="item-desc">Arrête Overdrive et ses automatismes. Relancez-le avec l'icône du bureau.</div></div><button class="btn btn-danger btn-sm" id="quitApp">${icon('power')}Quitter</button></div>
+      </div>`, { ico: 'settings' })}
+    ${card('À propos', `<div class="kv"><span>Version</span><span>${esc(INFO.version)}</span></div><div class="kv"><span>Droits administrateur</span><span>${INFO.admin ? 'oui' : 'non — utilisez l\'icône du bureau'}</span></div>
       <div class="kv"><span>Machine</span><span>${esc(INFO.static?.hostname)}</span></div><div class="kv"><span>Système</span><span>${esc(INFO.static?.os)} ${esc(INFO.static?.os_version || '')}</span></div>
       <div class="kv"><span>Températures</span><span>${STATS?.cpu?.temp != null ? 'disponibles' : 'lancez LibreHardwareMonitor (serveur web)'}</span></div>
       <div class="row mt"><a class="btn btn-sm" href="/api/docs" target="_blank">${icon('link')}Documentation de l'API</a></div>`, { ico: 'info' })}
   </div>`;
   $$('[data-copy]', v).forEach((b) => b.onclick = () => copyText(b.dataset.copy));
+  safeApi('/api/app/autostart').then((a) => {
+    const inp = $('#autoStart'); if (!inp || !a) return;
+    inp.checked = a.enabled; inp.disabled = !a.available;
+    if (!a.available) inp.closest('.item').querySelector('.item-desc').textContent += ' (disponible après « Installer Overdrive.bat »)';
+    inp.onchange = () => safe(act(null, () => api('/api/app/autostart', { method: 'PUT', body: { enabled: inp.checked } }), inp.checked ? 'Démarrage avec Windows activé' : 'Démarrage avec Windows désactivé').catch(() => { inp.checked = !inp.checked; }));
+  });
+  $('#quitApp').onclick = async (e) => {
+    if (!await confirmBox('Quitter Overdrive ?', 'Les profils de jeu automatiques et la supervision seront arrêtés jusqu\'au prochain lancement.', 'Quitter', true)) return;
+    safe(act(e.currentTarget, () => post('/api/app/quit')).then(() => { document.body.innerHTML = '<div class="empty" style="padding-top:20vh"><h2>Overdrive est arrêté</h2><p>Relancez-le avec l\'icône du bureau.</p></div>'; }));
+  };
   $('#remoteOn').onchange = (e) => safe(act(null, () => api('/api/config', { method: 'PUT', body: { allow_remote: e.target.checked } }), 'Enregistré — redémarrez Overdrive pour appliquer'));
   if ($('#regen')) $('#regen').onclick = async (e) => {
     if (!await confirmBox('Régénérer le jeton ?', 'Les téléphones et outils de supervision déjà connectés perdront l\'accès.', 'Régénérer', true)) return;
@@ -967,10 +1087,11 @@ R.settings = async (v) => {
 // ---------- Boucle temps réel ----------
 function updateChrome(s) {
   const chips = [];
-  if (INFO && !INFO.admin && INFO.windows) chips.push(`<span class="chip warn" title="Relancez via start.bat">${icon('alert')} Sans admin</span>`);
+  if (INFO && !INFO.admin && INFO.windows) chips.push(`<span class="chip warn" title="Relancez avec l'icône du bureau">${icon('alert')} Sans admin</span>`);
   if (s.cpu?.temp != null) chips.push(`<span class="chip ${s.cpu.temp > 90 ? 'bad' : ''}">${icon('thermo')} CPU ${Math.round(s.cpu.temp)}°</span>`);
   if (s.gpu?.temp != null) chips.push(`<span class="chip ${s.gpu.temp > 85 ? 'bad' : ''}">${icon('thermo')} GPU ${Math.round(s.gpu.temp)}°</span>`);
   if (s.battery) chips.push(`<span class="chip ${s.battery.plugged ? '' : 'warn'}">${icon('battery')} ${Math.round(s.battery.percent)} %${s.battery.plugged ? '' : ' batterie'}</span>`);
+  if (s.asus_mode) chips.push(`<a class="chip ${s.asus_mode === 'turbo' ? 'acc' : ''}" href="#/pc">${icon('rocket')} ASUS ${({ silent: 'Silencieux', balanced: 'Équilibré', turbo: 'Turbo' })[s.asus_mode]}</a>`);
   if (s.game) chips.push(`<a class="chip ok" href="#/games">${icon('play')} ${esc(s.game.name)} · ${esc(s.game.profile)}</a>`);
   if (s.alerts?.length) chips.push(`<a class="chip bad" href="#/supervision">${icon('alert')} ${s.alerts.length} alerte(s)</a>`);
   $('#chips').innerHTML = chips.join('');

@@ -3,6 +3,8 @@ import os
 import re
 import secrets
 import socket
+import threading
+import time
 
 import psutil
 from fastapi import Body, FastAPI, Request
@@ -10,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import (__version__, backup, cleaner, config, files, games, gaming, jobs, journal, maintenance, memory, monitor, network,
+from . import (__version__, advisor, asus, backup, cleaner, config, desktop, files, games, gaming, jobs, journal, maintenance, memory, monitor, network,
                processes, scheduler, services, startup, supervision, tweaks, updates)
 from .system import IS_WINDOWS, NotSupported, is_admin
 
@@ -105,7 +107,8 @@ def info(request: Request):
 @app.get("/api/stats")
 def stats():
     s = monitor.snapshot()
-    return {**s, "health": monitor.health_score(s), "alerts": supervision.status()["alerts"], "game": games.current()}
+    return {**s, "health": monitor.health_score(s), "alerts": supervision.status()["alerts"], "game": games.current(),
+            "asus_mode": config.get()["asus"].get("mode") if asus.is_asus() else None}
 
 
 @app.get("/api/history")
@@ -350,6 +353,64 @@ def gaming_kill_list(body: dict = Body(...)):
     return {"kill_list": names}
 
 
+# --- Analyse du PC & constructeur -----------------------------------------------------------------------------------------
+
+@app.get("/api/advisor")
+def advisor_last(light: bool = False):
+    a = advisor.last()
+    if light:  # résumé rapide pour le tableau de bord
+        return {"analysis": a and {k: a[k] for k in ("ts", "tier", "auto_count")} | {
+            "critical": sum(1 for f in a["findings"] if f["severity"] == "critique")}}
+    return {"analysis": a, "asus": asus.status(), "oem": asus.oem_tool(),
+            "turbo_in_games": config.get()["asus"].get("turbo_in_games", True)}
+
+
+@app.post("/api/advisor/scan")
+def advisor_scan():
+    return _job(jobs.submit("Analyse du PC", advisor.analyze))
+
+
+@app.post("/api/advisor/optimize")
+def advisor_optimize(body: dict = Body(default={})):
+    return _job(jobs.submit("Optimisation automatique du PC", advisor.optimize, body.get("actions")))
+
+
+@app.post("/api/asus/{action}")
+def asus_action(action: str, body: dict = Body(default={})):
+    if action == "mode":
+        return asus.set_mode(body["mode"])
+    if action == "battery":
+        return asus.set_battery_limit(body["limit"])
+    if action == "panel-od":
+        return asus.set_panel_od(bool(body["enabled"]))
+    if action == "turbo-in-games":
+        config.update({"asus": {"turbo_in_games": bool(body["enabled"])}})
+        return {"turbo_in_games": bool(body["enabled"])}
+    raise ValueError("Action inconnue")
+
+
+# --- Application (bureau) ---------------------------------------------------------------------------------------------
+
+@app.get("/api/app/autostart")
+def app_autostart():
+    return desktop.autostart_status()
+
+
+@app.put("/api/app/autostart")
+def app_set_autostart(body: dict = Body(...)):
+    return desktop.set_autostart(bool(body["enabled"]))
+
+
+@app.post("/api/app/quit")
+def app_quit():
+    server = getattr(app.state, "server", None)
+    if server is None:
+        raise RuntimeError("Arrêt indisponible dans ce mode de lancement.")
+    journal.log("system", "Overdrive arrêté depuis l'interface", "warning")
+    threading.Timer(0.5, lambda: setattr(server, "should_exit", True)).start()
+    return {"ok": True}
+
+
 # --- Bibliothèque de jeux (profils automatiques) ---------------------------------------------------------------------
 
 @app.get("/api/games")
@@ -530,10 +591,22 @@ def manifest():
     return FileResponse(os.path.join(STATIC_DIR, "manifest.webmanifest"), media_type="application/manifest+json")
 
 
+def _first_run():
+    """Réapplique les réglages ASUS mémorisés et lance une première analyse du PC si elle n'a jamais été faite."""
+    time.sleep(3)  # laisse le moniteur lire l'identité du PC
+    asus.apply_saved()
+    if advisor.last() is None:
+        try:
+            advisor.analyze()
+        except Exception as e:
+            journal.log("advisor", f"Analyse initiale impossible : {e}", "warning")
+
+
 @app.on_event("startup")
 def on_start():
     monitor.start()
     games.start()
+    threading.Thread(target=_first_run, daemon=True).start()
     supervision.start()
     scheduler.start()
     journal.log("system", f"Overdrive {__version__} démarré" + (" (administrateur)" if is_admin() else " (sans droits admin)"))

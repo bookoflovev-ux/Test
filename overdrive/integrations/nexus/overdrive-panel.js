@@ -115,7 +115,7 @@
     function offline(err) {
       el.querySelector('.odp-state').innerHTML = '<span class="odp-dot off"></span>hors ligne';
       body.innerHTML = '<div class="odp-off">Overdrive ne répond pas sur <code>' + esc(base()) + '</code>.<br>' +
-        'Lancez <code>start.bat</code> sur le PC (ou vérifiez l\'adresse dans Réglages).' +
+        'Lancez Overdrive avec son icône sur le PC (ou vérifiez l\'adresse dans Réglages).' +
         (err ? '<br><span style="font-size:11px">' + esc(err) + '</span>' : '') + '</div>';
     }
     function refresh() { api('/api/nexus').then(render, function (e) { offline(e.message); }); }

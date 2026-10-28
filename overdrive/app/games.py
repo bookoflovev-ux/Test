@@ -9,7 +9,7 @@ import time
 
 import psutil
 
-from . import config, journal, memory, processes, tweaks
+from . import asus, config, journal, memory, processes, tweaks
 from .config import DATA_DIR
 from .system import IS_WINDOWS, env_path
 
@@ -302,6 +302,8 @@ def _apply(key, name, pid, exe, entry):
             done.append("plan Performances ultimes")
         except Exception:
             pass
+    if asus.game_started():
+        done.append("mode ASUS Turbo")
     if IS_WINDOWS and prof["purge_ram"]:
         try:
             r = memory.optimize(purge_standby=True)
@@ -312,6 +314,7 @@ def _apply(key, name, pid, exe, entry):
 
 
 def _restore_after_games():
+    asus.game_ended()
     prev = _state["previous_plan"]
     _state["previous_plan"] = None
     if IS_WINDOWS and prev:
@@ -350,7 +353,7 @@ def _watch_once():
         if key not in seen:
             run = _state["running"].pop(key)
             journal.log("games", f"{lib.get(key, {}).get('name', key)} fermé — session de {int((now - run['since']) // 60)} min")
-    if not seen and _state["previous_plan"]:
+    if not seen and (_state["previous_plan"] or asus._game_state["previous"]):
         _restore_after_games()
     if updates:
         with _lock:

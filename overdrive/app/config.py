@@ -51,6 +51,7 @@ DEFAULTS = {
         "autoexec": "",
     },
     "games": {"auto_profiles": True},
+    "asus": {"mode": None, "battery_limit": None, "turbo_in_games": True},
     "backup": {
         "sources": [],
         "destination": "",
