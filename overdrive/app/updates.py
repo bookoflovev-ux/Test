@@ -22,42 +22,91 @@ def _need_windows():
         raise NotSupported("Disponible uniquement sous Windows.")
 
 
+# Recherche Windows Update : service « Microsoft Update » si activé (Office…), mises à jour normales ET facultatives.
+WU_SEARCH = r"""
+$s=New-Object -ComObject Microsoft.Update.Session; $s.ClientApplicationID='Overdrive'
+$q=$s.CreateUpdateSearcher(); $q.Online=$true
+try { $sm=New-Object -ComObject Microsoft.Update.ServiceManager
+  if(@($sm.Services | ? { $_.ServiceID -eq '7971f918-a847-4430-9279-4a52d1efe18d' }).Count -gt 0){
+    $q.ServerSelection=3; $q.ServiceID='7971f918-a847-4430-9279-4a52d1efe18d' } } catch {}
+function Find($c){ try { return $q.Search($c).Updates } catch { if($q.ServerSelection -ne 0){ $q.ServerSelection=0; return $q.Search($c).Updates } else { throw } } }
+$all=@{}
+foreach($c in @('IsInstalled=0 and IsHidden=0 and BrowseOnly=0','IsInstalled=0 and IsHidden=0 and BrowseOnly=1')){
+  foreach($u in (Find $c)){ $all[$u.Identity.UpdateID]=$u } }
+"""
+WU_ERRORS = {
+    "0x80070422": "Le service Windows Update est désactivé (services.msc → « Windows Update » → Manuel).",
+    "0x8024402c": "Windows Update est injoignable : vérifiez la connexion internet / le proxy.",
+    "0x80072ee2": "Délai dépassé en contactant Windows Update : réessayez.",
+    "0x8024401c": "Délai dépassé en contactant Windows Update : réessayez.",
+    "0x8024500c": "Windows Update est bloqué par une stratégie ou un outil tiers.",
+    "0x80240438": "Windows Update est inaccessible (réseau ou service bloqué).",
+}
+REBOOT_PENDING = ("(New-Object -ComObject Microsoft.Update.SystemInfo).RebootRequired -or "
+                  "(Test-Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired')")
+
+
+def _wu_error(err):
+    low = (err or "").lower()
+    for code, msg in WU_ERRORS.items():
+        if code in low:
+            return msg
+    return err or "Erreur Windows Update"
+
+
 def windows_scan(job, kind="all"):
     _need_windows()
-    job.update(0.1, "Recherche des mises à jour Windows (cela peut prendre quelques minutes)…")
-    data = ps_json(
-        "$s=New-Object -ComObject Microsoft.Update.Session;"
-        f"$r=$s.CreateUpdateSearcher().Search(\"{CRITERIA[kind]}\");"
-        "$r.Updates | % { [pscustomobject]@{Title=$_.Title; Driver=($_.Type -eq 2); KB=($_.KBArticleIDs -join ',');"
-        " Size=[int64]$_.MaxDownloadSize; Mandatory=$_.IsMandatory; Severity=$_.MsrcSeverity} }", timeout=900)
-    updates = [{"title": u["Title"], "driver": u["Driver"], "kb": u["KB"], "size": u["Size"], "severity": u.get("Severity")}
-               for u in as_list(data)]
-    journal.log("update", f"Windows Update : {len(updates)} mise(s) à jour disponible(s)")
-    return {"updates": updates}
+    if job:
+        job.update(0.1, "Recherche des mises à jour Windows, facultatives comprises (1 à 3 minutes)…")
+    try:
+        d = ps_json(WU_SEARCH + (
+            "$au=New-Object -ComObject Microsoft.Update.AutoUpdate\n"
+            "$last=$null; try { $last=$au.Results.LastSearchSuccessDate.ToString('yyyy-MM-dd HH:mm') } catch {}\n"
+            "$list=@($all.Values | % { [pscustomobject]@{Id=$_.Identity.UpdateID; Title=$_.Title; Driver=($_.Type -eq 2);"
+            " Optional=[bool]$_.BrowseOnly; KB=($_.KBArticleIDs -join ','); Size=[int64]$_.MaxDownloadSize;"
+            " Severity=$_.MsrcSeverity; Downloaded=[bool]$_.IsDownloaded } })\n"
+            f"[pscustomobject]@{{Updates=$list; Reboot=[bool]({REBOOT_PENDING}); LastSearch=$last}}"), timeout=900)
+    except RuntimeError as e:
+        raise RuntimeError(_wu_error(str(e)))
+    d = d[0] if isinstance(d, list) and d else d
+    ups = [{"id": u["Id"], "title": u["Title"], "driver": u["Driver"], "optional": u["Optional"], "kb": u["KB"], "size": u["Size"],
+            "severity": u.get("Severity"), "downloaded": u.get("Downloaded")} for u in as_list(d.get("Updates"))]
+    if kind == "driver":
+        ups = [u for u in ups if u["driver"]]
+    elif kind == "software":
+        ups = [u for u in ups if not u["driver"]]
+    ups.sort(key=lambda u: (u["optional"], u["driver"], u["title"]))
+    journal.log("update", f"Windows Update : {len(ups)} mise(s) à jour ({sum(u['optional'] for u in ups)} facultative(s))"
+                + (" — redémarrage en attente" if d.get("Reboot") else ""))
+    return {"updates": ups, "reboot_pending": bool(d.get("Reboot")), "last_search": d.get("LastSearch")}
 
 
-def windows_install(job, kind="all"):
+def windows_install(job, kind="all", ids=None):
     _need_windows()
     if not is_admin():
         raise PermissionError("Droits administrateur requis.")
+    ids = [i for i in (ids or []) if re.fullmatch(r"[0-9a-fA-F-]{36}", i)]
+    kind_filter = {"all": "$true", "driver": "($u.Type -eq 2)", "software": "($u.Type -eq 1)"}[kind]
     job.update(0.05, "Téléchargement et installation des mises à jour… (laissez le PC allumé)")
-    r = ps(
-        "$s=New-Object -ComObject Microsoft.Update.Session;"
-        f"$res=$s.CreateUpdateSearcher().Search(\"{CRITERIA[kind]}\");"
-        "$col=New-Object -ComObject Microsoft.Update.UpdateColl;"
-        "foreach($u in $res.Updates){ if(-not $u.EulaAccepted){$u.AcceptEula()}; [void]$col.Add($u) };"
-        "if($col.Count -eq 0){ '{\"installed\":0,\"reboot\":false,\"result\":2}'; exit };"
-        "$d=$s.CreateUpdateDownloader(); $d.Updates=$col; [void]$d.Download();"
-        "$i=$s.CreateUpdateInstaller(); $i.Updates=$col; $x=$i.Install();"
-        "@{installed=$col.Count; result=$x.ResultCode; reboot=$x.RebootRequired} | ConvertTo-Json -Compress", timeout=7200)
+    id_list = ",".join(f"'{i}'" for i in ids)
+    r = ps(WU_SEARCH + (
+        f"$ids=@({id_list})\n"
+        "$col=New-Object -ComObject Microsoft.Update.UpdateColl\n"
+        "foreach($u in $all.Values){ $take = if($ids.Count -gt 0){ $ids -contains $u.Identity.UpdateID } "
+        f"else {{ (-not $u.BrowseOnly) -and {kind_filter} }}\n"
+        "  if($take){ if(-not $u.EulaAccepted){$u.AcceptEula()}; [void]$col.Add($u) } }\n"
+        "if($col.Count -eq 0){ '{\"installed\":0,\"reboot\":false,\"result\":2}'; exit }\n"
+        "$d=$s.CreateUpdateDownloader(); $d.Updates=$col; [void]$d.Download()\n"
+        "$i=$s.CreateUpdateInstaller(); $i.Updates=$col; $x=$i.Install()\n"
+        "@{installed=$col.Count; result=$x.ResultCode; reboot=$x.RebootRequired} | ConvertTo-Json -Compress"), timeout=7200)
     import json
     try:
         res = json.loads(r["out"].splitlines()[-1])
     except (ValueError, IndexError):
-        raise RuntimeError(r["err"] or r["out"] or "Échec de Windows Update")
+        raise RuntimeError(_wu_error(r["err"] or r["out"]))
     codes = {2: "réussie", 3: "réussie avec erreurs", 4: "échouée", 5: "annulée"}
     res["status"] = codes.get(res.get("result"), "inconnue")
-    journal.log("update", f"Windows Update ({kind}) : {res['installed']} installée(s), installation {res['status']}"
+    journal.log("update", f"Windows Update : {res['installed']} installée(s), installation {res['status']}"
                 + (" — redémarrage requis" if res.get("reboot") else ""), "success" if res.get("result") in (2, 3) else "error")
     return res
 

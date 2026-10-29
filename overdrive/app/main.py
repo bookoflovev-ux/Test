@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import (__version__, advisor, asus, backup, cleaner, config, desktop, files, games, gaming, jobs, journal, maintenance, memory, monitor, network,
+from . import (__version__, advisor, asus, backup, cleaner, config, desktop, drivers, files, games, gaming, jobs, journal, maintenance, memory, monitor, network,
                processes, scheduler, services, startup, supervision, tweaks, updates)
 from .system import IS_WINDOWS, NotSupported, is_admin
 
@@ -470,6 +470,16 @@ def updates_vendor():
     return {**updates.vendor_info(), "winget": updates.winget_available()}
 
 
+@app.post("/api/drivers/scan")
+def drivers_scan():
+    return _job(jobs.submit("Recherche de pilotes (toutes sources)", drivers.scan))
+
+
+@app.post("/api/drivers/download")
+def drivers_download(body: dict = Body(...)):
+    return _job(jobs.submit("Téléchargement de pilote", drivers.download, body["url"], body.get("title", "")))
+
+
 @app.get("/api/updates/drivers")
 def updates_drivers():
     return updates.drivers()
@@ -483,7 +493,7 @@ def updates_action(action: str, body: dict = Body(default={})):
     if action == "windows-scan":
         return _job(jobs.submit("Recherche Windows Update", updates.windows_scan, kind))
     if action == "windows-install":
-        return _job(jobs.submit("Installation Windows Update", updates.windows_install, kind))
+        return _job(jobs.submit("Installation Windows Update", updates.windows_install, kind, body.get("ids")))
     if action == "apps-scan":
         return _job(jobs.submit("Recherche mises à jour applis", updates.apps_scan))
     if action == "apps-upgrade":

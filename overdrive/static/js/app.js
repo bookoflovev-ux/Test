@@ -876,48 +876,81 @@ R.updates = async (v) => {
   show('windows');
 };
 
+function wuRows(updates) {
+  return `<div class="table-wrap"><table><thead><tr><th></th><th>Mise à jour</th><th>Type</th><th class="num">Taille</th></tr></thead><tbody>
+    ${updates.map((u) => `<tr><td style="width:30px"><input type="checkbox" data-wu="${esc(u.id)}" ${u.optional ? '' : 'checked'}></td><td>${esc(u.title)}</td>
+    <td><div class="row" style="gap:4px">${u.driver ? chip('pilote', 'acc') : chip(u.severity || 'système')}${u.optional ? chip('facultative') : ''}${u.downloaded ? chip('téléchargée', 'ok') : ''}</div></td>
+    <td class="num">${u.size ? fmtBytes(u.size) : '—'}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
 function updWindows(el) {
-  el.innerHTML = card('Windows Update', `<p class="muted" style="margin-top:0">Mises à jour de sécurité, cumulatives et pilotes certifiés (dont ceux fournis par ASUS via Windows Update).</p>
+  el.innerHTML = card('Windows Update', `<p class="muted" style="margin-top:0">Mises à jour de sécurité, cumulatives, Microsoft Update (Office…) et <b>facultatives</b> (pilotes proposés par Windows), comme dans Paramètres → Windows Update.</p>
     <div class="row"><button class="btn btn-primary" id="wScan">${icon('search')}Rechercher</button>
-    <button class="btn" id="wAll" disabled>${icon('download')}Tout installer</button><button class="btn" id="wDrv" disabled>${icon('gpu')}Installer les pilotes uniquement</button>
+    <button class="btn" id="wSel" disabled>${icon('download')}Installer la sélection</button>
     <button class="btn btn-ghost" id="wOpen">${icon('link')}Ouvrir Windows Update</button></div><div id="wOut" class="mt"></div>`, { ico: 'download' });
   $('#wScan').onclick = (e) => safe(act(e.currentTarget, async () => {
     const r = await startJob('/api/updates/windows-scan', { kind: 'all' }, $('#wOut'), 'Recherche…');
-    $('#wOut').innerHTML = r.updates.length ? `<div class="table-wrap"><table><thead><tr><th>Mise à jour</th><th>Type</th><th class="num">Taille</th></tr></thead><tbody>
-      ${r.updates.map((u) => `<tr><td>${esc(u.title)}</td><td>${u.driver ? chip('pilote', 'acc') : chip(u.severity || 'système')}</td><td class="num">${u.size ? fmtBytes(u.size) : '—'}</td></tr>`).join('')}</tbody></table></div>`
-      : `<span class="chip ok">${icon('check')} Windows est à jour</span>`;
-    $('#wAll').disabled = !r.updates.length; $('#wDrv').disabled = !r.updates.some((u) => u.driver);
+    const reboot = r.reboot_pending ? notice('<b>Une mise à jour est déjà installée et attend un redémarrage.</b> C\'est souvent celle que Windows affiche : redémarrez le PC pour la terminer.') + '<div style="height:12px"></div>' : '';
+    $('#wOut').innerHTML = reboot + (r.updates.length ? wuRows(r.updates) + `<div class="tiny faint mt">Les mises à jour facultatives ne sont pas cochées par défaut. Dernière recherche Windows : ${esc(r.last_search || '—')}</div>`
+      : `<span class="chip ok">${icon('check')} Aucune mise à jour en attente</span>`);
+    $('#wSel').disabled = !r.updates.length;
   }));
-  const install = (kind) => async (e) => {
-    if (!await confirmBox('Installer les mises à jour ?', 'L\'installation peut durer longtemps et nécessiter un redémarrage. Gardez le PC branché.', 'Installer')) return;
+  $('#wSel').onclick = async (e) => {
+    const ids = $$('[data-wu]:checked', el).map((i) => i.dataset.wu);
+    if (!ids.length) return toast('Cochez au moins une mise à jour', 'warn');
+    if (!await confirmBox('Installer les mises à jour ?', `${ids.length} mise(s) à jour. L'installation peut être longue et demander un redémarrage. Gardez le PC branché.`, 'Installer')) return;
     safe(act(e.currentTarget, async () => {
-      const r = await startJob('/api/updates/windows-install', { kind }, $('#wOut'), 'Installation…');
+      const r = await startJob('/api/updates/windows-install', { ids }, $('#wOut'), 'Installation…');
       $('#wOut').innerHTML = `<span class="chip ${r.result <= 3 ? 'ok' : 'bad'}">${r.installed} installée(s) — ${esc(r.status)}</span>${r.reboot ? ' ' + chip('redémarrage requis', 'warn') : ''}`;
       return r;
     }, 'Installation terminée'));
   };
-  $('#wAll').onclick = install('all'); $('#wDrv').onclick = install('driver');
   $('#wOpen').onclick = () => safe(act(null, () => post('/api/open/windows_update')));
 }
 
+const SRC = { 'Windows Update': 'acc', ASUS: 'ok', NVIDIA: 'ok' };
+
 async function updDrivers(el) {
-  el.innerHTML = card('Pilotes installés', '<div class="skeleton"></div>', { ico: 'gpu' });
-  let list = [];
-  try { list = await api('/api/updates/drivers'); } catch (e) { el.innerHTML = card('Pilotes installés', empty(e.message), { ico: 'gpu' }); return; }
-  const year = new Date().getFullYear();
-  el.innerHTML = card('Pilotes installés', `<div class="row mb"><button class="btn btn-primary" id="dScan">${icon('search')}Chercher des pilotes plus récents (Windows Update)</button>
-    <button class="btn btn-ghost" id="dDev">${icon('link')}Gestionnaire de périphériques</button></div><div id="dOut" class="mb"></div>
-    ${notice('Pour la carte graphique, le pilote le plus récent vient de <b>NVIDIA</b> (application NVIDIA) ; pour le BIOS, le chipset et les pilotes spécifiques TUF, utilisez <b>MyASUS</b> (onglet « ASUS & constructeur »).', 'info')}
-    <div class="table-wrap scroll-y mt"><table><thead><tr><th>Périphérique</th><th>Catégorie</th><th>Version</th><th class="num">Date</th></tr></thead><tbody>
-    ${list.map((d) => { const old = d.date && year - Number(d.date.slice(0, 4)) >= 3; return `<tr><td>${esc(d.name)}<div class="tiny faint">${esc(d.vendor || '')}</div></td><td>${chip(d.class)}</td><td class="mono">${esc(d.version)}</td>
-      <td class="num ${old ? '' : 'muted'}" style="${old ? 'color:var(--warn)' : ''}">${esc(d.date || '—')}</td></tr>`; }).join('')}</tbody></table></div>`, { ico: 'gpu', sub: `${list.length} pilotes · en orange : plus de 3 ans` });
-  $('#dScan').onclick = (e) => safe(act(e.currentTarget, async () => {
-    const r = await startJob('/api/updates/windows-scan', { kind: 'driver' }, $('#dOut'), 'Recherche de pilotes…');
-    $('#dOut').innerHTML = r.updates.length ? `<div class="stack" style="gap:6px">${r.updates.map((u) => `<div class="tip small">${esc(u.title)}</div>`).join('')}
-      <button class="btn btn-primary" id="dInst">${icon('download')}Installer ces ${r.updates.length} pilote(s)</button></div>` : `<span class="chip ok">${icon('check')} Aucun nouveau pilote sur Windows Update</span>`;
-    if ($('#dInst')) $('#dInst').onclick = (ev) => safe(act(ev.currentTarget, () => startJob('/api/updates/windows-install', { kind: 'driver' }, $('#dOut'), 'Installation des pilotes…'), 'Pilotes installés'));
-  }));
+  el.innerHTML = `<div class="stack">${card('Mises à jour de pilotes — toutes sources', `<p class="muted" style="margin-top:0">Overdrive interroge <b>Windows Update</b> (pilotes facultatifs compris), le <b>serveur officiel ASUS</b> de votre modèle (pilotes + BIOS, comparés à vos composants exacts) et le <b>serveur NVIDIA</b> (dernier pilote Game Ready). Téléchargements uniquement depuis les sites officiels.</p>
+    <div class="row"><button class="btn btn-primary" id="dScan">${icon('search')}Rechercher sur toutes les sources</button><button class="btn btn-ghost" id="dDev">${icon('link')}Gestionnaire de périphériques</button></div>
+    <div id="dOut" class="mt"></div>`, { ico: 'gpu', cls: 'glow' })}<div id="dInstalled"></div></div>`;
   $('#dDev').onclick = () => safe(act(null, () => post('/api/open/devmgmt')));
+  $('#dScan').onclick = (e) => safe(act(e.currentTarget, async () => {
+    const r = await startJob('/api/drivers/scan', {}, $('#dOut'), 'Recherche…');
+    const ups = r.items.filter((x) => x.status === 'update');
+    const ok = r.items.filter((x) => x.status === 'ok');
+    const unk = r.items.filter((x) => x.status === 'unknown');
+    const row = (x) => `<tr><td>${chip(x.source, SRC[x.source])}</td><td>${esc(x.title)}<div class="tiny faint">${esc(x.category)}${x.optional ? ' · facultatif' : ''}</div></td>
+      <td class="mono small">${x.installed ? esc(x.installed) : '—'}</td><td class="mono small" style="${x.status === 'update' ? 'color:var(--ok)' : ''}">${x.version ? esc(x.version) : '—'}</td>
+      <td class="small muted hide-sm">${esc(x.date || '')}</td><td class="num">${x.status !== 'update' ? (x.status === 'ok' ? chip('à jour', 'ok') : '') :
+        x.action === 'windows' ? `<button class="btn btn-sm btn-primary" data-wuid="${esc(x.id)}">Installer</button>`
+        : `<button class="btn btn-sm btn-primary" data-dl="${esc(x.url || '')}" data-kind="${x.action}" data-title="${esc(x.title)}">${x.action === 'bios' ? 'Télécharger le BIOS' : 'Télécharger et installer'}</button>`}</td></tr>`;
+    const table = (rows) => `<div class="table-wrap"><table><thead><tr><th>Source</th><th>Pilote</th><th>Installé</th><th>Disponible</th><th class="hide-sm">Date</th><th></th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>`;
+    $('#dOut').innerHTML = `${Object.entries(r.errors).map(([k, v]) => notice(`<b>${esc(k)}</b> : ${esc(v)}`)).join('<div style="height:8px"></div>')}
+      ${r.asus ? `<div class="small muted mb mt">Modèle ASUS : <b>${esc(r.asus.model)}</b> · BIOS ${esc(r.asus.bios)}</div>` : ''}
+      ${ups.length ? `<h3 class="mt mb" style="font-size:14px">${ups.length} mise(s) à jour disponible(s)</h3>${table(ups)}` : `<div class="mt">${chip(`Aucune mise à jour de pilote trouvée`, 'ok')}</div>`}
+      ${ok.length ? `<details class="mt"><summary class="small muted" style="cursor:pointer">${ok.length} pilote(s) vérifié(s) et à jour</summary><div class="mt">${table(ok)}</div></details>` : ''}
+      ${unk.length ? `<details class="mt"><summary class="small muted" style="cursor:pointer">${unk.length} élément(s) ASUS non vérifiables (logiciels ou composants absents de ce PC)</summary><div class="mt">${table(unk)}</div></details>` : ''}
+      ${r.hints.map((h) => `<div class="tip mt"><b>${esc(h.title)}</b><p>${esc(h.text)} <a href="${esc(h.url)}" target="_blank" rel="noopener">Ouvrir</a></p></div>`).join('')}`;
+    $$('[data-wuid]', el).forEach((b) => b.onclick = () => safe(act(b, () => startJob('/api/updates/windows-install', { ids: [b.dataset.wuid] }, $('#dOut').appendChild(document.createElement('div')), 'Installation…'), 'Pilote installé').then(() => { b.replaceWith(Object.assign(document.createElement('span'), { innerHTML: chip('installé', 'ok') })); })));
+    $$('[data-dl]', el).forEach((b) => b.onclick = async () => {
+      const bios = b.dataset.kind === 'bios';
+      if (!await confirmBox(bios ? 'Télécharger le BIOS ?' : 'Télécharger ce pilote ?', bios
+        ? 'Le BIOS sera téléchargé depuis ASUS. Installez-le portable branché sur secteur, sans l\'interrompre (le plus sûr : via MyASUS ou EZ Flash au démarrage).'
+        : 'Le pilote est téléchargé depuis le site officiel puis son installeur s\'ouvre (ou son dossier, pour une archive) : suivez les étapes à l\'écran.', 'Télécharger')) return;
+      const box = document.createElement('div'); box.className = 'mt'; b.closest('td').appendChild(box);
+      safe(act(b, () => startJob('/api/drivers/download', { url: b.dataset.dl, title: b.dataset.title }, box, 'Téléchargement…'), (res) => `Téléchargé : ${res.path}`).then(() => { box.remove(); }));
+    });
+  }));
+  // Inventaire des pilotes installés (secondaire)
+  let list = [];
+  try { list = await api('/api/updates/drivers'); } catch (e) { $('#dInstalled').innerHTML = card('Pilotes installés', empty(e.message), { ico: 'gpu' }); return; }
+  const year = new Date().getFullYear();
+  $('#dInstalled').innerHTML = card('Pilotes installés', `<div class="table-wrap scroll-y"><table><thead><tr><th>Périphérique</th><th>Catégorie</th><th>Version</th><th class="num">Date</th></tr></thead><tbody>
+    ${list.map((d) => { const old = d.date && year - Number(d.date.slice(0, 4)) >= 3; return `<tr><td>${esc(d.name)}<div class="tiny faint">${esc(d.vendor || '')}</div></td><td>${chip(d.class)}</td><td class="mono">${esc(d.version)}</td>
+    <td class="num ${old ? '' : 'muted'}" style="${old ? 'color:var(--warn)' : ''}">${esc(d.date || '—')}</td></tr>`; }).join('')}</tbody></table></div>
+    <div class="tiny faint mt">Une date ancienne ne signifie pas forcément qu'une mise à jour existe : beaucoup de composants (claviers, ports USB…) utilisent des pilotes Microsoft stables.</div>`,
+  { ico: 'gpu', sub: `${list.length} pilotes · en orange : plus de 3 ans` });
 }
 
 function updApps(el) {
