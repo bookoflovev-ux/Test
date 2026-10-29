@@ -331,6 +331,11 @@ def gaming_boost(body: dict = Body(default={})):
     return gaming.game_boost(kill=body.get("kill", True))
 
 
+@app.post("/api/gaming/video")
+def gaming_video():
+    return gaming.optimize_video()
+
+
 @app.get("/api/gaming/autoexec")
 def get_autoexec():
     return gaming.get_autoexec()
@@ -475,9 +480,9 @@ def drivers_scan():
     return _job(jobs.submit("Recherche de pilotes (toutes sources)", drivers.scan))
 
 
-@app.post("/api/drivers/download")
-def drivers_download(body: dict = Body(...)):
-    return _job(jobs.submit("Téléchargement de pilote", drivers.download, body["url"], body.get("title", "")))
+@app.post("/api/drivers/install")
+def drivers_install(body: dict = Body(...)):
+    return _job(jobs.submit("Installation de pilotes", drivers.install_many, body["items"]))
 
 
 @app.get("/api/updates/drivers")
@@ -573,6 +578,12 @@ def supervision_test():
 def nexus_pull():
     """Point d'entrée « pull » : Nexus (ou tout outil de supervision) peut interroger cette URL."""
     return supervision.payload(include_processes=True)
+
+
+@app.get("/api/changelog", response_class=PlainTextResponse)
+def changelog():
+    path = os.path.join(config.BASE_DIR, "CHANGELOG.md")
+    return open(path, encoding="utf-8").read() if os.path.exists(path) else ""
 
 
 @app.get("/api/health")

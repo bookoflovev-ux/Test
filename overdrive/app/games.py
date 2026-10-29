@@ -277,6 +277,24 @@ def _set_gpu_pref(exe):
             pass
 
 
+IFEO = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\{}\PerfOptions"
+IFEO_CLASS = {"high": 3, "above": 6}
+
+
+def set_registry_priority(exe, level):
+    """Priorité CPU appliquée par Windows au lancement du jeu (clé PerfOptions) : aucun accès au processus du jeu,
+    donc compatible FACEIT / Vanguard / EAC. « normal » ou None retire le réglage."""
+    if not IS_WINDOWS or not exe:
+        return False
+    name = os.path.basename(exe).lower()
+    key = f"ifeo:{name}"
+    if level in IFEO_CLASS:
+        tweaks.apply_reg_ops(key, [tweaks.R("HKLM", IFEO.format(name), "CpuPriorityClass", IFEO_CLASS[level])], f"Priorité {name}")
+        return True
+    tweaks.revert_backup(key)
+    return False
+
+
 def _apply(key, name, pid, exe, entry):
     prof_id, prof = profile_of(entry)
     if prof_id == "off" or not entry.get("auto", True):
@@ -284,12 +302,11 @@ def _apply(key, name, pid, exe, entry):
     done = []
     if prof["gpu_high"]:
         _set_gpu_pref(exe)
-    if prof["priority"] and prof["priority"] != "normal":
-        try:
-            processes.set_priority(pid, prof["priority"])
-            done.append(f"priorité {prof['priority']}")
-        except Exception:
-            pass  # certains anti-triche protègent le processus : sans conséquence
+    try:
+        if set_registry_priority(exe, prof["priority"]):
+            done.append(f"priorité {prof['priority']} (registre)")
+    except OSError:
+        pass
     if prof["kill_bloat"]:
         killed = processes.kill_by_names(config.get()["gaming"]["kill_list"])
         if killed:

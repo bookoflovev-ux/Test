@@ -74,7 +74,8 @@ def list_processes():
 
 
 def _protected(pid, name):
-    return pid <= 4 or pid == os.getpid() or pid == os.getppid() or name.lower() in CRITICAL
+    from .anticheat import is_protected
+    return pid <= 4 or pid == os.getpid() or pid == os.getppid() or name.lower() in CRITICAL or is_protected(name)
 
 
 def kill(pid: int):
@@ -83,7 +84,7 @@ def kill(pid: int):
     if pid == os.getpid():
         raise PermissionError("Impossible d'arrêter Overdrive depuis lui-même.")
     if _protected(pid, name):
-        raise PermissionError(f"{name} est un processus système critique : arrêt refusé.")
+        raise PermissionError(f"{name} est protégé (système, jeu, anti-triche, Discord ou Steam) : arrêt refusé.")
     p.terminate()
     try:
         p.wait(3)
@@ -97,6 +98,9 @@ def set_priority(pid: int, level: str):
     if level not in PRIORITIES:
         raise ValueError("Priorité inconnue")
     p = psutil.Process(pid)
+    if _protected(pid, p.name()):
+        raise PermissionError(f"{p.name()} est protégé : sa priorité n'est pas modifiée en direct (compatibilité anti-triche). "
+                              "Pour un jeu, utilisez son profil dans « Mes jeux ».")
     p.nice(getattr(psutil, PRIORITIES[level]) if IS_WINDOWS else _UNIX_NICE[level])
     journal.log("process", f"Priorité de {p.name()} → {level}", "success")
     return {"name": p.name(), "priority": level}

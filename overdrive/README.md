@@ -1,5 +1,7 @@
 # ⚡ Overdrive — centre de pilotage PC
 
+Version actuelle : voir `app/__init__.py` · historique des nouveautés : [`CHANGELOG.md`](CHANGELOG.md).
+
 Logiciel **gratuit et open source** pour optimiser, entretenir et superviser un PC Windows,
 conçu pour le jeu (**Counter-Strike 2**) et les portables **ASUS TUF**. Inspiré d'IObit Advanced
 SystemCare / Driver Booster, MyASUS et Armoury Crate, mais **transparent** : chaque réglage est expliqué
@@ -23,8 +25,9 @@ son téléphone** (installable sur l'écran d'accueil) ou depuis n'importe où v
 - Pour désinstaller : **`Desinstaller Overdrive.bat`** (propose de remettre les réglages Windows d'origine).
 - Dépannage : `outils\console-depannage.bat` lance Overdrive avec une console visible, et le journal se trouve
   dans `data\overdrive.log`. `outils\build_exe.bat` génère un `.exe` autonome.
-- Températures CPU : lancez [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases)
-  avec *Options → Remote Web Server → Run* (port 8085).
+- Températures CPU : [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases)
+  avec *Options → Remote Web Server → Run* (port 8085). ⚠ **Fermez-le avant de jouer sur FACEIT** : le pilote WinRing0
+  de ses anciennes versions est bloqué par l'anti-triche (Overdrive vous prévient s'il est ouvert).
 
 ## 🧭 Modules
 

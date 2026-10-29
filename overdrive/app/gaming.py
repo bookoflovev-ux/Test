@@ -13,6 +13,8 @@ from .config import DATA_DIR
 from .system import IS_WINDOWS, NotSupported, is_admin
 
 CS2_APPID = "730"
+CS2_TWEAKS = ("power_plan", "game_mode", "game_dvr_off", "games_priority", "network_throttling", "mouse_accel_off", "hags",
+              "windowed_opt", "background_apps_off", "notifications_off")
 IFEO = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\cs2.exe\PerfOptions"
 GPU_PREF = r"Software\Microsoft\DirectX\UserGpuPreferences"
 
@@ -26,6 +28,7 @@ cl_hud_telemetry_frametime_show 2          // affiche FPS / frametime
 cl_hud_telemetry_ping_show 2
 cl_hud_telemetry_net_misdelivery_show 2    // perte de paquets
 mm_dedicated_search_maxping 80             // serveurs à ping faible uniquement
+rate 786432                                // débit réseau maximal autorisé (connexion fibre / ADSL correcte)
 cl_autohelp false
 cl_showloadout true
 snd_mute_losefocus false
@@ -150,21 +153,74 @@ def apply_cs2_profile():
         raise NotSupported("Profil disponible uniquement sous Windows.")
     if not is_admin():
         raise PermissionError("Droits administrateur requis : relancez Overdrive avec l'icône du bureau (ou « Installer Overdrive.bat »).")
-    done = []
-    for tid in ("power_plan", "game_mode", "game_dvr_off", "games_priority", "network_throttling", "mouse_accel_off", "hags"):
+    steps = []
+    for tid in CS2_TWEAKS:
         try:
             tweaks.apply(tid)
-            done.append(tweaks.BY_ID[tid]["name"])
+            steps.append({"label": tweaks.BY_ID[tid]["name"], "ok": True})
         except Exception as e:
-            journal.log("gaming", f"{tid} : {e}", "warning")
+            steps.append({"label": tweaks.BY_ID[tid]["name"], "ok": False, "detail": str(e)})
     cs2 = find_cs2()
-    ops = [tweaks.R("HKLM", IFEO, "CpuPriorityClass", 3)]  # 3 = High
+    ops = [tweaks.R("HKLM", IFEO, "CpuPriorityClass", 3)]  # 3 = High, appliqué par Windows au lancement (sans toucher au jeu)
     if cs2.get("installed"):
         ops.append(tweaks.R("HKCU", GPU_PREF, cs2["exe"], "GpuPreference=2;", "SZ"))
     tweaks.apply_reg_ops("cs2:profile", ops, "Profil CS2")
-    done += ["CS2 en priorité CPU haute (permanent)", "CS2 forcé sur le GPU haute performance"]
+    steps += [{"label": "CS2 en priorité CPU haute (via le registre, compatible FACEIT)", "ok": True},
+              {"label": "CS2 forcé sur la carte graphique dédiée", "ok": cs2.get("installed", False)}]
+    try:
+        from .asus import is_asus
+        if is_asus():
+            config.update({"asus": {"turbo_in_games": True}})
+            steps.append({"label": "ASUS : mode Turbo automatique pendant CS2 (sur secteur)", "ok": True})
+    except Exception:
+        pass
+    try:
+        v = optimize_video()
+        steps.append({"label": f"Réglages vidéo CS2 ({len(v['changed'])} modifié(s))" if v["changed"] else "Réglages vidéo CS2 déjà optimaux",
+                      "ok": True, "detail": ", ".join(v["changed"])})
+    except Exception as e:
+        steps.append({"label": "Réglages vidéo CS2", "ok": False, "detail": str(e)})
     journal.log("gaming", "Profil CS2 compétitif appliqué", "success")
-    return {"applied": done, "reboot": True}
+    return {"steps": steps, "applied": [s["label"] for s in steps if s["ok"]], "reboot": True}
+
+
+# Réglages vidéo modifiés dans cs2_video.txt (uniquement s'ils existent déjà dans le fichier, CS2 fermé, avec copie .bak).
+VIDEO_TARGETS = {
+    "setting.mat_vsync": ("0", "V-Sync désactivée"),
+    "setting.r_low_latency": ("2", "NVIDIA Reflex Activé + Boost"),
+    "setting.r_aoproxy_enable": ("0", "Occlusion ambiante désactivée"),
+    "setting.shaderquality": ("0", "Détails des shaders bas"),
+    "setting.fullscreen": ("1", "Plein écran"),
+}
+
+
+def optimize_video():
+    cs2 = find_cs2()
+    if not cs2.get("installed"):
+        raise FileNotFoundError("CS2 introuvable.")
+    if processes.find("cs2.exe"):
+        raise RuntimeError("Fermez CS2 d'abord : il réécrit ses réglages en quittant.")
+    files = [os.path.join(d, "cs2_video.txt") for d in cs2["user_cfgs"] if os.path.exists(os.path.join(d, "cs2_video.txt"))]
+    if not files:
+        raise FileNotFoundError("Lancez CS2 une première fois pour qu'il crée ses réglages vidéo.")
+    changed = set()
+    for path in files:
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            text = f.read()
+        new = text
+        for key, (value, label) in VIDEO_TARGETS.items():
+            rx = re.compile(r'("' + re.escape(key) + r'"\s+")([^"]*)(")')
+            m = rx.search(new)
+            if m and m.group(2) != value:
+                new = rx.sub(lambda mm: mm.group(1) + value + mm.group(3), new, count=1)
+                changed.add(label)
+        if new != text:
+            shutil.copy2(path, path + f".{time.strftime('%Y%m%d-%H%M%S')}.bak")
+            with open(path, "w", encoding="utf-8", newline="") as f:
+                f.write(new)
+    if changed:
+        journal.log("gaming", "Réglages vidéo CS2 optimisés : " + ", ".join(sorted(changed)), "success")
+    return {"changed": sorted(changed), "files": len(files)}
 
 
 def revert_cs2_profile():
@@ -179,7 +235,8 @@ def revert_cs2_profile():
 
 
 def game_boost(kill=True):
-    """Boost immédiat avant une partie : ferme les applis inutiles, libère la RAM, plan perf, CS2 en priorité haute."""
+    """Boost immédiat avant une partie : ferme les applis inutiles (jamais Discord, Steam ni FACEIT), libère la RAM,
+    plan d'alimentation maximal."""
     report = {"killed": [], "ram": None, "power_plan": None, "cs2_priority": False}
     if kill:
         report["killed"] = processes.kill_by_names(config.get()["gaming"]["kill_list"])
@@ -193,12 +250,8 @@ def game_boost(kill=True):
             report["power_plan"] = tweaks.set_power_plan(tweaks._ensure_ultimate_plan())["name"]
         except Exception as e:
             report["power_plan"] = f"erreur : {e}"
-        for p in processes.find("cs2.exe"):
-            try:
-                p.nice(psutil.HIGH_PRIORITY_CLASS)
-                report["cs2_priority"] = True
-            except psutil.Error:
-                pass
+        # Pas de priorité appliquée « à chaud » sur cs2.exe (compatibilité FACEIT) : la clé de registre du profil CS2 suffit.
+        report["cs2_priority"] = tweaks.reg_read("HKLM", IFEO, "CpuPriorityClass")[1] == 3
     journal.log("gaming", f"Game Boost : {len(report['killed'])} application(s) fermée(s)", "success")
     return report
 
@@ -246,7 +299,20 @@ def backup_cs2_config():
     return {"path": dest}
 
 
+DISCORD_TIPS = [
+    {"title": "Superposition (overlay) en jeu : désactivée", "text": "Paramètres utilisateur → Superposition de jeu → désactiver. Gain de FPS et rien d'injecté dans CS2."},
+    {"title": "Accélération matérielle : désactivée sur portable", "text": "Paramètres → Avancés → Accélération matérielle off : Discord n'utilise plus la carte graphique de CS2 (laisser activée si vous streamez)."},
+    {"title": "Voix : qualité de service désactivée si ping instable", "text": "Voix et vidéo → « Activer la priorité de paquets élevée (QoS) » à désactiver si des micro-coupures apparaissent avec votre box."},
+    {"title": "Discord n'est jamais fermé", "text": "Overdrive le protège : ni Game Boost, ni profil de jeu ne le ferment, et sa mémoire n'est pas vidée pendant la partie (pas de coupure de voix)."},
+]
+
+
 def info():
+    from .anticheat import status as ac_status
     return {"launch_options": LAUNCH_OPTIONS, "launch_notes": LAUNCH_NOTES,
             "video_settings": [{"setting": a, "value": b, "why": c} for a, b, c in VIDEO_SETTINGS],
-            "tuf_tips": TUF_TIPS, "kill_list": config.get()["gaming"]["kill_list"]}
+            "tuf_tips": TUF_TIPS, "kill_list": config.get()["gaming"]["kill_list"],
+            "discord_tips": DISCORD_TIPS, "anticheat": ac_status(),
+            "profile_steps": [tweaks.BY_ID[t]["name"] for t in CS2_TWEAKS] + [
+                "CS2 en priorité CPU haute (registre)", "CS2 sur la carte graphique dédiée", "Mode ASUS Turbo pendant CS2 (portables ASUS)",
+                "Réglages vidéo : V-Sync off, Reflex + Boost, shaders bas, occlusion ambiante off, plein écran"]}

@@ -199,6 +199,14 @@ def _findings(hw):
     if laptop:
         out.append(_f("plug", "conseil", "Jouez branché sur secteur",
                       "Sur batterie, le GPU d'un portable est fortement bridé (souvent 50 % de FPS en moins)."))
+    try:
+        from .anticheat import status as ac_status
+        ac = ac_status()
+        if ac["risky"] and ac["faceit"]:
+            out.append(_f("anticheat", "critique", f"{', '.join(ac['risky'])} ouvert alors que FACEIT est installé",
+                          "Son pilote (WinRing0) est bloqué par FACEIT : fermez-le avant de jouer, ou passez à une version récente sans WinRing0."))
+    except Exception:
+        pass
     oem = asus.oem_tool()
     if oem and not asus.is_asus():
         out.append(_f("oem", "conseil", f"Outil constructeur : {oem['tool']}", oem["tip"]))

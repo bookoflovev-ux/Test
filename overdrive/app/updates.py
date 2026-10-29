@@ -87,7 +87,8 @@ def windows_install(job, kind="all", ids=None):
         raise PermissionError("Droits administrateur requis.")
     ids = [i for i in (ids or []) if re.fullmatch(r"[0-9a-fA-F-]{36}", i)]
     kind_filter = {"all": "$true", "driver": "($u.Type -eq 2)", "software": "($u.Type -eq 1)"}[kind]
-    job.update(0.05, "Téléchargement et installation des mises à jour… (laissez le PC allumé)")
+    if job:
+        job.update(0.05, "Téléchargement et installation des mises à jour… (laissez le PC allumé)")
     id_list = ",".join(f"'{i}'" for i in ids)
     r = ps(WU_SEARCH + (
         f"$ids=@({id_list})\n"

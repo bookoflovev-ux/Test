@@ -55,11 +55,13 @@ def trim_working_sets(exclude=()):
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     psapi = ctypes.WinDLL("psapi", use_last_error=True)
     kernel32.OpenProcess.restype = wintypes.HANDLE
+    from .anticheat import is_protected
     exclude = {e.lower() for e in exclude}
     count = 0
     for p in psutil.process_iter(["pid", "name"]):
         name = (p.info["name"] or "").lower()
-        if p.pid in (0, 4) or name in PROTECTED or name in exclude:
+        # jeux, anti-triche, Discord, Steam : jamais touchés (compatibilité FACEIT / Vanguard, pas de saccades en jeu)
+        if p.pid in (0, 4) or name in PROTECTED or name in exclude or is_protected(name):
             continue
         h = kernel32.OpenProcess(0x0400 | 0x0100, False, p.pid)  # QUERY_INFORMATION | SET_QUOTA
         if h:
@@ -73,8 +75,11 @@ def optimize(purge_standby=True, exclude=()):
     """Optimisation complète de la RAM. Renvoie la mémoire libérée."""
     if not IS_WINDOWS:
         raise NotSupported("Optimisation RAM disponible uniquement sous Windows.")
+    from .games import current
     before = psutil.virtual_memory().available
-    trimmed = trim_working_sets(exclude)
+    in_game = current() is not None
+    # En partie, on ne vide pas la mémoire des applications (cela provoquerait des saccades) : purge standby seule.
+    trimmed = 0 if in_game else trim_working_sets(exclude)
     standby_ok = False
     if purge_standby and is_admin():
         if _enable_privilege("SeProfileSingleProcessPrivilege"):

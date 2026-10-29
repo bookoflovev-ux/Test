@@ -192,15 +192,13 @@ def scan(job):
     return result
 
 
-def download(job, url, title=""):
-    """Télécharge un pilote depuis ASUS/NVIDIA dans Téléchargements\\Overdrive, puis lance l'installeur ou ouvre le dossier."""
+def _download(job, url, label, lo=0.0, hi=1.0):
     u = urllib.parse.urlparse(url or "")
     if u.scheme != "https" or not DOWNLOAD_HOSTS.search(u.hostname or ""):
         raise ValueError("Téléchargement refusé : seuls les serveurs officiels ASUS et NVIDIA sont autorisés.")
     folder = os.path.join(os.path.expanduser("~"), "Downloads", "Overdrive")
     os.makedirs(folder, exist_ok=True)
-    name = os.path.basename(u.path) or "pilote"
-    dest = os.path.join(folder, name)
+    dest = os.path.join(folder, os.path.basename(u.path) or "pilote")
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=60) as r, open(dest + ".part", "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)
@@ -211,19 +209,96 @@ def download(job, url, title=""):
                 break
             f.write(chunk)
             done += len(chunk)
-            if total:
-                job.update(done / total, f"Téléchargement {done / 1024 ** 2:.0f} / {total / 1024 ** 2:.0f} Mo")
+            if total and job:
+                job.update(lo + (hi - lo) * done / total, f"{label} — téléchargement {done / 1024 ** 2:.0f} / {total / 1024 ** 2:.0f} Mo")
     os.replace(dest + ".part", dest)
-    opened = dest
-    if dest.lower().endswith(".zip"):
-        out = os.path.splitext(dest)[0]
-        with zipfile.ZipFile(dest) as z:
-            for m in z.namelist():  # protection contre les chemins sortant du dossier
-                if os.path.isabs(m) or ".." in m.replace("\\", "/").split("/"):
-                    raise ValueError("Archive suspecte, extraction annulée.")
-            z.extractall(out)
-        opened = out
-    if IS_WINDOWS:
-        os.startfile(opened)
-    journal.log("drivers", f"Pilote téléchargé : {title or name} → {opened}", "success")
-    return {"path": opened, "launched": opened.lower().endswith(".exe")}
+    return dest
+
+
+def _extract(path):
+    out = os.path.splitext(path)[0]
+    with zipfile.ZipFile(path) as z:
+        for m in z.namelist():  # protection contre les chemins sortant du dossier
+            if os.path.isabs(m) or ".." in m.replace("\\", "/").split("/"):
+                raise ValueError("Archive suspecte, extraction annulée.")
+        z.extractall(out)
+    return out
+
+
+def _find(folder, pattern):
+    rx = re.compile(pattern, re.I)
+    for root, _, files in os.walk(folder):
+        for f in files:
+            if rx.fullmatch(f):
+                return os.path.join(root, f)
+    return None
+
+
+def _install_file(path, label):
+    """Installe un paquet téléchargé. Renvoie (ok, méthode, détail, redémarrage)."""
+    from .system import run
+    if path.lower().endswith(".exe"):  # NVIDIA : installeur officiel en mode silencieux
+        r = run([path, "-s", "-noreboot"], timeout=2400)
+        return r["code"] == 0, "installeur NVIDIA (silencieux)", "écran noir quelques secondes pendant l'installation : normal", True
+    folder = _extract(path) if path.lower().endswith(".zip") else os.path.dirname(path)
+    setup = _find(folder, r"asussetup\.exe")
+    if setup:  # paquets ASUS : installeur officiel en mode silencieux
+        r = run([setup, "-s"], timeout=2400)
+        if r["code"] in (0, 3010):
+            return True, "installeur ASUS (silencieux)", "", r["code"] == 3010
+    if _find(folder, r".+\.inf"):  # pilotes « INF » : installation directe par Windows
+        r = run(["pnputil", "/add-driver", os.path.join(folder, "*.inf"), "/subdirs", "/install"], timeout=1200)
+        if r["code"] in (0, 3010) or "ajouté" in r["out"].lower() or "added" in r["out"].lower():
+            return True, "pnputil (Windows)", "", r["code"] == 3010
+    other = _find(folder, r"(setup|install)\.exe")
+    if other:  # dernier recours : installeur interactif
+        os.startfile(other)
+        return True, "installeur ouvert", "terminez l'installation dans la fenêtre qui s'est ouverte", False
+    os.startfile(folder)
+    return False, "manuel", "paquet sans installeur reconnu : dossier ouvert", False
+
+
+def install_many(job, items):
+    """Télécharge et installe les pilotes choisis, après un point de restauration. Le BIOS est seulement préparé."""
+    if not IS_WINDOWS:
+        raise NotSupported("Disponible uniquement sous Windows.")
+    results = []
+    n = len(items) or 1
+    job.update(0.02, "Point de restauration de sécurité…")
+    try:
+        from .backup import create_restore_point
+        create_restore_point("Overdrive - avant mise a jour des pilotes")
+        restore = True
+    except Exception:
+        restore = False
+    wu = [it for it in items if it.get("action") == "windows" and it.get("id")]
+    if wu:
+        job.update(0.05, f"Windows Update : installation de {len(wu)} pilote(s)…")
+        try:
+            r = updates.windows_install(None, "driver", [it["id"] for it in wu])
+            for it in wu:
+                results.append({"key": it.get("key"), "title": it.get("title"), "ok": r.get("result") in (2, 3),
+                                "method": "Windows Update", "detail": r.get("status", ""), "reboot": bool(r.get("reboot"))})
+        except Exception as e:
+            results += [{"key": it.get("key"), "title": it.get("title"), "ok": False, "method": "Windows Update", "detail": str(e), "reboot": False} for it in wu]
+    others = [it for it in items if it not in wu]
+    for i, it in enumerate(others):
+        lo, hi = (len(wu) + i) / n, (len(wu) + i + 1) / n
+        label = f"[{len(wu) + i + 1}/{n}] {it.get('title', 'Pilote')}"
+        try:
+            path = _download(job, it.get("url"), label, lo, lo + (hi - lo) * 0.6)
+            if it.get("action") == "bios":
+                folder = _extract(path) if path.lower().endswith(".zip") else os.path.dirname(path)
+                os.startfile(folder)
+                results.append({"key": it.get("key"), "title": it.get("title"), "ok": True, "method": "BIOS préparé",
+                                "detail": "Installez-le portable branché via MyASUS ou EZ Flash (F2 au démarrage) avec ce fichier.", "reboot": False})
+                continue
+            job.update(lo + (hi - lo) * 0.65, f"{label} — installation…")
+            ok, method, detail, reboot = _install_file(path, label)
+            results.append({"key": it.get("key"), "title": it.get("title"), "ok": ok, "method": method, "detail": detail, "reboot": reboot})
+        except Exception as e:
+            results.append({"key": it.get("key"), "title": it.get("title"), "ok": False, "method": "", "detail": str(e), "reboot": False})
+    ok = sum(1 for r in results if r["ok"])
+    journal.log("drivers", f"Pilotes : {ok}/{len(results)} installé(s)" + (" (point de restauration créé)" if restore else ""),
+                "success" if ok == len(results) else "warning")
+    return {"results": results, "restore_point": restore, "reboot": any(r["reboot"] for r in results)}

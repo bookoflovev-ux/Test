@@ -516,14 +516,24 @@ R.gaming = async (v) => {
         ${st.running ? chip('En cours d\'exécution', 'acc') : ''}${active ? chip('Profil compétitif actif', 'ok') : chip('Profil inactif')}
         ${st.priority_set ? chip('Priorité haute permanente', 'ok') : ''}${st.gpu_pref_set ? chip('GPU dédié forcé', 'ok') : ''}</div>
       <h2>Counter-Strike 2 — Mode compétitif</h2>
-      <p>Le profil applique en un clic : plan Performances ultimes, Mode Jeu, capture Game DVR coupée, priorité multimédia des jeux,
-      bridage réseau désactivé, souris 1:1, HAGS, CS2 en priorité CPU haute et forcé sur le GPU NVIDIA. Tout est annulable.</p>
+      <p>Un clic pour mettre le PC au maximum pour CS2, avec Discord qui continue de tourner et en restant compatible FACEIT. Tout est annulable.</p>
       ${st.on_battery ? notice('Votre portable est <b>sur batterie</b> : branchez le secteur, sinon le GPU est bridé et les FPS chutent fortement.') + '<div style="height:14px"></div>' : ''}
       <div class="row">
-        ${active ? `<button class="btn btn-lg" id="profOff">${icon('undo')}Désactiver le profil</button>` : `<button class="btn btn-primary btn-lg" id="profOn">${icon('rocket')}Activer le profil CS2</button>`}
+        <button class="btn btn-primary btn-lg" id="profOn">${icon('rocket')}${active ? 'Réappliquer l\'optimisation CS2' : 'Optimiser le PC pour CS2'}</button>
         <button class="btn btn-lg" id="boostBtn">${icon('zap')}Game Boost maintenant</button>
+        ${active ? `<button class="btn btn-ghost" id="profOff">${icon('undo')}Tout annuler</button>` : ''}
       </div>
+      <details class="mt"><summary class="small muted" style="cursor:pointer">Ce que fait l'optimisation CS2 (${inf.profile_steps.length} réglages)</summary>
+        <ul class="issues">${inf.profile_steps.map((x) => `<li>${icon('check').replace('<svg', '<svg style="color:var(--ok)"')}<span>${esc(x)}</span></li>`).join('')}</ul></details>
       ${cs2.installed ? `<div class="tiny faint mt">${esc(cs2.game_dir)}</div>` : ''}
+    </div>
+
+    <div class="grid g2">
+      ${card('Compatibilité FACEIT / anti-triche', `${inf.anticheat.risky.length ? notice(`<b>${esc(inf.anticheat.risky.join(', '))}</b> est ouvert : son pilote (WinRing0) est bloqué par FACEIT et peut l'empêcher de démarrer. Fermez-le avant de jouer.`) + '<div style="height:10px"></div>' : ''}
+        <div class="row mb" style="gap:6px">${inf.anticheat.faceit ? chip('FACEIT installé', 'ok') : chip('FACEIT non détecté')}${inf.anticheat.running_anticheats.map((a) => chip(`${a} actif`, 'acc')).join('')}</div>
+        <ul class="issues">${inf.anticheat.rules.map((r) => `<li>${icon('shield').replace('<svg', '<svg style="color:var(--ok)"')}<span>${esc(r)}</span></li>`).join('')}</ul>`,
+        { ico: 'shield', sub: 'Overdrive ne fait rien qui puisse être vu comme de la triche' })}
+      ${card('Discord pendant CS2', `<div class="stack" style="gap:10px">${inf.discord_tips.map((t) => `<div class="tip"><b>${esc(t.title)}</b><p>${esc(t.text)}</p></div>`).join('')}</div>`, { ico: 'activity', sub: 'Garder la voix fluide sans perdre de FPS' })}
     </div>
 
     <div class="grid g2">
@@ -548,7 +558,13 @@ R.gaming = async (v) => {
     </div></div>`;
 
   const on = $('#profOn'), off = $('#profOff');
-  if (on) on.onclick = () => safe(act(on, () => post('/api/gaming/profile'), 'Profil CS2 activé — redémarrez le PC pour HAGS').then(() => route()));
+  if (on) on.onclick = () => safe(act(on, async () => {
+    const r = await post('/api/gaming/profile');
+    modal(`<h3>CS2 optimisé</h3><div class="stack" style="gap:6px;margin-bottom:14px">${r.steps.map((x) => `<div class="row" style="flex-wrap:nowrap;align-items:flex-start">${chip(x.ok ? '✓' : '✗', x.ok ? 'ok' : 'bad')}<div><b style="font-size:13px">${esc(x.label)}</b>${x.detail ? `<div class="tiny faint">${esc(x.detail)}</div>` : ''}</div></div>`).join('')}</div>
+      <p class="small">Redémarrez le PC une fois pour activer la planification GPU (HAGS). Pensez aussi aux options de lancement Steam ci-dessous.</p><div class="row" style="justify-content:flex-end"><button class="btn btn-primary" id="mOk">OK</button></div>`);
+    $('#mOk').onclick = () => { closeModal(); route(); };
+    return r;
+  }));
   if (off) off.onclick = () => safe(act(off, () => api('/api/gaming/profile', { method: 'DELETE' }), 'Profil désactivé, réglages d\'origine restaurés').then(() => route()));
   $('#boostBtn').onclick = (e) => safe(act(e.currentTarget, () => post('/api/gaming/boost'),
     (r) => `Game Boost : ${r.killed.length ? r.killed.join(', ') + ' fermé(s)' : 'aucune appli à fermer'}${r.ram?.freed ? ` · ${fmtBytes(r.ram.freed)} RAM libérés` : ''}`));
@@ -870,10 +886,10 @@ R.network = async (v) => {
 
 // ===== Mises à jour =====
 R.updates = async (v) => {
-  v.innerHTML = `${winOnly()}<div style="margin-top:${INFO.windows ? 0 : 16}px">${tabs([['windows', 'Windows Update'], ['drivers', 'Pilotes'], ['apps', 'Applications'], ['vendor', 'ASUS & constructeur']], 'windows')}</div><div id="uBody"></div>`;
+  v.innerHTML = `${winOnly()}<div style="margin-top:${INFO.windows ? 0 : 16}px">${tabs([['drivers', 'Pilotes (ASUS, NVIDIA, Windows)'], ['windows', 'Windows Update'], ['apps', 'Applications'], ['vendor', 'ASUS & constructeur']], 'drivers')}</div><div id="uBody"></div>`;
   const show = (t) => ({ windows: updWindows, drivers: updDrivers, apps: updApps, vendor: updVendor })[t]($('#uBody'));
   bindTabs(v, show);
-  show('windows');
+  show('drivers');
 };
 
 function wuRows(updates) {
@@ -917,30 +933,45 @@ async function updDrivers(el) {
   $('#dDev').onclick = () => safe(act(null, () => post('/api/open/devmgmt')));
   $('#dScan').onclick = (e) => safe(act(e.currentTarget, async () => {
     const r = await startJob('/api/drivers/scan', {}, $('#dOut'), 'Recherche…');
+    r.items.forEach((x, i) => { x._k = String(i); x.key = String(i); });
     const ups = r.items.filter((x) => x.status === 'update');
+    const auto = ups.filter((x) => x.action !== 'bios');
     const ok = r.items.filter((x) => x.status === 'ok');
     const unk = r.items.filter((x) => x.status === 'unknown');
     const row = (x) => `<tr><td>${chip(x.source, SRC[x.source])}</td><td>${esc(x.title)}<div class="tiny faint">${esc(x.category)}${x.optional ? ' · facultatif' : ''}</div></td>
       <td class="mono small">${x.installed ? esc(x.installed) : '—'}</td><td class="mono small" style="${x.status === 'update' ? 'color:var(--ok)' : ''}">${x.version ? esc(x.version) : '—'}</td>
       <td class="small muted hide-sm">${esc(x.date || '')}</td><td class="num">${x.status !== 'update' ? (x.status === 'ok' ? chip('à jour', 'ok') : '') :
-        x.action === 'windows' ? `<button class="btn btn-sm btn-primary" data-wuid="${esc(x.id)}">Installer</button>`
-        : `<button class="btn btn-sm btn-primary" data-dl="${esc(x.url || '')}" data-kind="${x.action}" data-title="${esc(x.title)}">${x.action === 'bios' ? 'Télécharger le BIOS' : 'Télécharger et installer'}</button>`}</td></tr>`;
+        `<span data-st="${x._k}"><button class="btn btn-sm ${x.action === 'bios' ? '' : 'btn-primary'}" data-inst="${x._k}">${x.action === 'bios' ? 'Préparer le BIOS' : 'Installer'}</button></span>`}</td></tr>`;
     const table = (rows) => `<div class="table-wrap"><table><thead><tr><th>Source</th><th>Pilote</th><th>Installé</th><th>Disponible</th><th class="hide-sm">Date</th><th></th></tr></thead><tbody>${rows.map(row).join('')}</tbody></table></div>`;
     $('#dOut').innerHTML = `${Object.entries(r.errors).map(([k, v]) => notice(`<b>${esc(k)}</b> : ${esc(v)}`)).join('<div style="height:8px"></div>')}
       ${r.asus ? `<div class="small muted mb mt">Modèle ASUS : <b>${esc(r.asus.model)}</b> · BIOS ${esc(r.asus.bios)}</div>` : ''}
-      ${ups.length ? `<h3 class="mt mb" style="font-size:14px">${ups.length} mise(s) à jour disponible(s)</h3>${table(ups)}` : `<div class="mt">${chip(`Aucune mise à jour de pilote trouvée`, 'ok')}</div>`}
+      ${ups.length ? `<div class="row between mt mb"><h3 style="font-size:14px">${ups.length} mise(s) à jour disponible(s)</h3>
+        ${auto.length ? `<button class="btn btn-primary" id="dAll">${icon('download')}Tout mettre à jour (${auto.length})</button>` : ''}</div>
+        <div class="small muted mb">« Installer » télécharge le pilote depuis le site officiel <b>et l'installe automatiquement</b> (point de restauration créé avant). Le BIOS est seulement préparé : il s'installe via MyASUS.</div>
+        <div id="dProg" class="mb"></div>${table(ups)}` : `<div class="mt">${chip(`Aucune mise à jour de pilote trouvée`, 'ok')}</div>`}
       ${ok.length ? `<details class="mt"><summary class="small muted" style="cursor:pointer">${ok.length} pilote(s) vérifié(s) et à jour</summary><div class="mt">${table(ok)}</div></details>` : ''}
       ${unk.length ? `<details class="mt"><summary class="small muted" style="cursor:pointer">${unk.length} élément(s) ASUS non vérifiables (logiciels ou composants absents de ce PC)</summary><div class="mt">${table(unk)}</div></details>` : ''}
       ${r.hints.map((h) => `<div class="tip mt"><b>${esc(h.title)}</b><p>${esc(h.text)} <a href="${esc(h.url)}" target="_blank" rel="noopener">Ouvrir</a></p></div>`).join('')}`;
-    $$('[data-wuid]', el).forEach((b) => b.onclick = () => safe(act(b, () => startJob('/api/updates/windows-install', { ids: [b.dataset.wuid] }, $('#dOut').appendChild(document.createElement('div')), 'Installation…'), 'Pilote installé').then(() => { b.replaceWith(Object.assign(document.createElement('span'), { innerHTML: chip('installé', 'ok') })); })));
-    $$('[data-dl]', el).forEach((b) => b.onclick = async () => {
-      const bios = b.dataset.kind === 'bios';
-      if (!await confirmBox(bios ? 'Télécharger le BIOS ?' : 'Télécharger ce pilote ?', bios
-        ? 'Le BIOS sera téléchargé depuis ASUS. Installez-le portable branché sur secteur, sans l\'interrompre (le plus sûr : via MyASUS ou EZ Flash au démarrage).'
-        : 'Le pilote est téléchargé depuis le site officiel puis son installeur s\'ouvre (ou son dossier, pour une archive) : suivez les étapes à l\'écran.', 'Télécharger')) return;
-      const box = document.createElement('div'); box.className = 'mt'; b.closest('td').appendChild(box);
-      safe(act(b, () => startJob('/api/drivers/download', { url: b.dataset.dl, title: b.dataset.title }, box, 'Téléchargement…'), (res) => `Téléchargé : ${res.path}`).then(() => { box.remove(); }));
-    });
+    const byKey = Object.fromEntries(r.items.map((x) => [x._k, x]));
+    const install = async (list, btn) => {
+      if (!list.length) return;
+      const bios = list.some((x) => x.action === 'bios');
+      if (!await confirmBox(bios ? 'Préparer la mise à jour du BIOS ?' : `Installer ${list.length} pilote(s) ?`, bios
+        ? 'Le BIOS est téléchargé depuis ASUS et son dossier s\'ouvre. Installez-le ensuite avec MyASUS (ou EZ Flash), portable branché, sans l\'interrompre.'
+        : 'Overdrive crée un point de restauration, télécharge chaque pilote depuis le site officiel et l\'installe automatiquement. L\'écran peut clignoter pendant le pilote graphique.', bios ? 'Préparer' : 'Installer')) return;
+      list.forEach((x) => { const c = $(`[data-st="${x._k}"]`, el); if (c) c.innerHTML = chip('en attente'); });
+      safe(act(btn, async () => {
+        const res = await startJob('/api/drivers/install', { items: list.map(({ _k, ...x }) => x) }, $('#dProg'), 'Préparation…');
+        $('#dProg').innerHTML = `${chip(`${res.results.filter((x) => x.ok).length}/${res.results.length} réussi(s)`, 'ok')} ${res.restore_point ? chip('point de restauration créé', 'acc') : ''} ${res.reboot ? chip('redémarrez le PC pour terminer', 'warn') : ''}`;
+        res.results.forEach((x) => {
+          const c = $(`[data-st="${x.key}"]`, el);
+          if (c) c.innerHTML = `${chip(x.ok ? '✓ ' + (x.method === 'BIOS préparé' ? 'préparé' : 'installé') : '✗ échec', x.ok ? 'ok' : 'bad')}<div class="tiny faint" style="max-width:240px;margin-left:auto">${esc(x.method)}${x.detail ? ' — ' + esc(x.detail) : ''}</div>`;
+        });
+        return res;
+      }, (res) => `${res.results.filter((x) => x.ok).length} pilote(s) traité(s)`));
+    };
+    $$('[data-inst]', el).forEach((b) => b.onclick = () => install([byKey[b.dataset.inst]], b));
+    if ($('#dAll')) $('#dAll').onclick = (ev) => install(auto, ev.currentTarget);
   }));
   // Inventaire des pilotes installés (secondaire)
   let list = [];
@@ -1084,12 +1115,13 @@ R.settings = async (v) => {
       <div class="item"><div class="item-body"><div class="item-title">Démarrer avec Windows</div><div class="item-desc">Overdrive se lance caché à l'ouverture de session (icône près de l'horloge), sans fenêtre ni demande d'autorisation.</div></div>${sw(false, 'id="autoStart" disabled')}</div>
       <div class="item"><div class="item-body"><div class="item-title">Quitter Overdrive</div><div class="item-desc">Arrête Overdrive et ses automatismes. Relancez-le avec l'icône du bureau.</div></div><button class="btn btn-danger btn-sm" id="quitApp">${icon('power')}Quitter</button></div>
       </div>`, { ico: 'settings' })}
-    ${card('À propos', `<div class="kv"><span>Version</span><span>${esc(INFO.version)}</span></div><div class="kv"><span>Droits administrateur</span><span>${INFO.admin ? 'oui' : 'non — utilisez l\'icône du bureau'}</span></div>
+    ${card('À propos', `<div class="kv"><span>Version</span><span>${esc(INFO.version)} · <a href="#" id="clLink">nouveautés</a></span></div><div class="kv"><span>Droits administrateur</span><span>${INFO.admin ? 'oui' : 'non — utilisez l\'icône du bureau'}</span></div>
       <div class="kv"><span>Machine</span><span>${esc(INFO.static?.hostname)}</span></div><div class="kv"><span>Système</span><span>${esc(INFO.static?.os)} ${esc(INFO.static?.os_version || '')}</span></div>
-      <div class="kv"><span>Températures</span><span>${STATS?.cpu?.temp != null ? 'disponibles' : 'lancez LibreHardwareMonitor (serveur web)'}</span></div>
+      <div class="kv"><span>Températures</span><span>${STATS?.cpu?.temp != null ? 'disponibles' : 'LibreHardwareMonitor (à fermer avant FACEIT)'}</span></div>
       <div class="row mt"><a class="btn btn-sm" href="/api/docs" target="_blank">${icon('link')}Documentation de l'API</a></div>`, { ico: 'info' })}
   </div>`;
   $$('[data-copy]', v).forEach((b) => b.onclick = () => copyText(b.dataset.copy));
+  $('#clLink').onclick = (e) => { e.preventDefault(); showChangelog(false); };
   safeApi('/api/app/autostart').then((a) => {
     const inp = $('#autoStart'); if (!inp || !a) return;
     inp.checked = a.enabled; inp.disabled = !a.available;
@@ -1116,6 +1148,30 @@ R.settings = async (v) => {
     auto_ram: $('#autoRam').checked, ram_threshold: Number($('#ramTh').value) || 85,
     auto_backup: $('#autoBk').checked, backup_every_hours: Number($('#bkH').value) || 24 } } }), 'Automatisations enregistrées'));
 };
+
+// ---------- Nouveautés ----------
+function mdLite(md) {
+  let html = '', inList = false;
+  for (const l of md.split('\n')) {
+    const t = esc(l).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`(.+?)`/g, '<code>$1</code>');
+    const item = l.startsWith('- ');
+    if (inList && !item) { html += '</ul>'; inList = false; }
+    if (l.startsWith('## ')) html += `<h4 style="margin:16px 0 6px">${t.slice(3)}</h4>`;
+    else if (item) { if (!inList) { html += '<ul style="margin:0;padding-left:18px">'; inList = true; } html += `<li style="margin:3px 0">${t.slice(2)}</li>`; }
+    else if (t && !l.startsWith('# ')) html += `<p class="small" style="margin:4px 0">${t}</p>`;
+  }
+  return html + (inList ? '</ul>' : '');
+}
+
+async function showChangelog(onlyLatest) {
+  const md = await fetch('/api/changelog', { headers: TOKEN ? { 'X-Token': TOKEN } : {} }).then((r) => r.text()).catch(() => '');
+  if (!md) return;
+  const sections = md.split(/\n(?=## )/).slice(1);
+  modal(`<h3>Nouveautés d'Overdrive ${onlyLatest ? `v${esc(INFO.version)}` : ''}</h3><div style="max-height:60vh;overflow:auto;font-size:13px">${mdLite((onlyLatest ? sections.slice(0, 1) : sections).map((x) => x.trim()).join('\n'))}</div>
+    <div class="row mt" style="justify-content:flex-end">${onlyLatest ? '<button class="btn btn-ghost" id="clAll">Historique complet</button>' : ''}<button class="btn btn-primary" id="clOk">OK</button></div>`);
+  $('#clOk').onclick = closeModal;
+  if ($('#clAll')) $('#clAll').onclick = () => showChangelog(false);
+}
 
 // ---------- Boucle temps réel ----------
 function updateChrome(s) {
@@ -1158,7 +1214,12 @@ async function boot() {
   if (INFO.token) { TOKEN = INFO.token; try { localStorage.setItem('od_token', TOKEN); } catch (e) {} }
   const st = INFO.static || {};
   $('#sidebarFoot').innerHTML = `<div class="row" style="gap:8px">${INFO.admin ? chip('Administrateur', 'ok') : chip('Sans admin', 'warn')}${INFO.local ? '' : chip('Distant', 'acc')}</div>
-    <div class="ellipsis"><b style="color:var(--text)">${esc(st.hostname || '')}</b><br>${esc(st.os || '')}</div><div class="tiny faint">Overdrive v${esc(INFO.version)}</div>`;
+    <div class="ellipsis"><b style="color:var(--text)">${esc(st.hostname || '')}</b><br>${esc(st.os || '')}</div>
+    <a class="tiny faint" href="#" id="verLink" title="Voir les nouveautés">Overdrive v${esc(INFO.version)} · nouveautés</a>`;
+  $('#verLink').onclick = (e) => { e.preventDefault(); showChangelog(true); };
+  let seen = null;
+  try { seen = localStorage.getItem('od_seen_version'); localStorage.setItem('od_seen_version', INFO.version); } catch (e) { /* stockage indisponible */ }
+  if (seen && seen !== INFO.version) setTimeout(() => showChangelog(true), 800);
   if (!booted) {
     booted = true;
     window.addEventListener('hashchange', route);
